@@ -11,9 +11,9 @@
 #import "Reachability.h"
 
 /* Override for NSLog */
-void MPILog(NSString *source, NSString* description)
+void MPILog(MPILoggerLevel level, NSString *source, NSString* description)
 {
-    [[MPIEventLogger sharedInstance] log:source description:description];
+    [[MPIEventLogger sharedInstance] log:level source:source description:description];
 }
 
 
@@ -25,7 +25,7 @@ static MPILoggerLevel const kDefaultLogLevel = MPILoggerLevelInfo;
 // in the case it is not configured explicitly
 static MPILogDestination const kDefaultLogDestination = MPILogDestinationALL;
 
-static NSString* const kApiHost = @"localhost:3000";
+static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";
 
 @interface MPIEventLogger()
 // re-usable url session for API calls
@@ -127,7 +127,7 @@ description:(NSString*)description
     NSString* deviceName = [[UIDevice currentDevice] name];
     MPIEvent* evt = [[MPIEvent alloc] init:level
                                     source:source
-                               description:description
+                               displayText:description
                                       tags:tags
                                      start:[self timeWithOffset:start]
                                        end:[self timeWithOffset:end]

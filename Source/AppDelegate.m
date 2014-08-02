@@ -26,7 +26,7 @@
     
     
     // initial game launch
-    [MPIGameManager instance];
+    [[MPIGameManager instance] startup];
     
     //[TestFlight takeOff:@"ba6904ec-9673-47ca-a275-e1bd8ddeda07"];
     
@@ -62,7 +62,7 @@
     
     // setup logger at INFO level and to console and API
     logger.logLevel = MPILoggerLevelFatal;
-    logger.logDestination = MPILogDestinationALL;
+    logger.logDestination = MPILogDestinationConsole;
 }
 
 - (void) createExpireNotification
@@ -70,13 +70,11 @@
     [self killExpireNotification];
     
     // if peers connected, setup kill switch
-    if ([MPIGameManager instance].sessionController.connectedPeers.count != 0)
+    if ([MPIGameManager instance].connectedPeers.count != 0)
     {
-        NSTimeInterval gracePeriod = 10000.0f;
-        
         // create notification that will get the user back into the app when the background process time is about to expire
         //NSTimeInterval msgTime = UIApplication.sharedApplication.backgroundTimeRemaining - gracePeriod;
-        NSTimeInterval msgTime = gracePeriod;
+        NSTimeInterval msgTime = 10.0f;
         
         UILocalNotification* n = [[UILocalNotification alloc] init];
         self.expireNotification = n;

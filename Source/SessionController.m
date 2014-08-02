@@ -13,18 +13,21 @@
 #import <CommonCrypto/CommonDigest.h>
 
 @interface MPISessionController () // Class extension
+
+@property (readwrite) MPILocalSessionState mySessionState;  // track state of managed MCSession
+@property (readwrite) MPIPeerState myPeerState;             // track state of local peer
+
 @property (nonatomic, strong) MCPeerID *peerID;
 @property (nonatomic, strong) MCSession *session;
 @property (nonatomic, strong) MCNearbyServiceAdvertiser *serviceAdvertiser;
 @property (nonatomic, strong) MCNearbyServiceBrowser *serviceBrowser;
 
+// timer for initial advertise ...
+@property (nonatomic, strong) NSTimer* advertiseTimer;
+
 // track start time of invitation process for specific peers
 @property (nonatomic, strong) NSMutableDictionary* invitations;
 
-// Connected peers are stored in the MCSession
-// Manually track connecting and disconnected peers
-@property (nonatomic, strong) NSMutableOrderedSet *connectingPeersOrderedSet;
-@property (nonatomic, strong) NSMutableOrderedSet *disconnectedPeersOrderedSet;
 @end
 
 @implementation MPISessionController
@@ -32,6 +35,8 @@
 static NSString * const kLogDefaultTag = @"SessionController";
 static NSString * const kLocalPeerIDKey = @"mpi-local-peerid";
 static NSString * const kMCSessionServiceType = @"mpi-shared";
+
+static double const kInitialAdvertiseSeconds = 7.0f;
 
 #pragma mark - Initializer
 
@@ -41,6 +46,8 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
     
     if (self)
     {
+        _mySessionState = MPILocalSessionStateNotCreated;
+        
         // capture function name for event logging
         NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
         
@@ -66,32 +73,9 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
         }
         
         
-        _connectingPeersOrderedSet = [[NSMutableOrderedSet alloc] init];
-        _disconnectedPeersOrderedSet = [[NSMutableOrderedSet alloc] init];
         _invitations = [[NSMutableDictionary alloc] init];
         
-        NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
-        
-        /*
-        // Register for notifications
-        [defaultCenter addObserver:self
-                          selector:@selector(startServices)
-                              name:UIApplicationWillEnterForegroundNotification
-                            object:nil];
-        
-        [defaultCenter addObserver:self
-                          selector:@selector(stopServices)
-                              name:UIApplicationDidEnterBackgroundNotification
-                            object:nil];
-         */
-        
-        [self startup];
-        
-        _connectedPeers = self.session.connectedPeers;
-        _connectingPeers = [self.connectingPeersOrderedSet array];
-        _disconnectedPeers = [self.disconnectedPeersOrderedSet array];
-        
-        _displayName = self.session.myPeerID.displayName;
+        _displayName = _peerID.displayName;
     }
     
     return self;
@@ -122,158 +106,181 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
     [self sendMessage:@"4" value:time toPeer:peer];
 }
 
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer{
+- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer {
+    [self sendMessage:type value:val toPeer:peer asReliable:YES];
+}
+- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable {
     
     // convert single peer to array
     NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
     
     // call overriden method
-    [self sendMessage:type value:val toPeers:peers];
+    [self sendMessage:type value:val toPeers:peers asReliable:reliable];
 }
 
 - (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers{
+    [self sendMessage:type value:val toPeers:peers asReliable:YES];
+}
+- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
     NSDate* sendDt = [NSDate date];
     // create message object
     MPIMessage *msg = [[MPIMessage alloc] init];
     msg.type = type;
     msg.val = val;
     msg.createdAt = [[MPIEventLogger sharedInstance] timeWithOffset:sendDt];
+
+    // use override
+    [self sendMessage:msg toPeers:peers];
+}
+
+- (void) sendMessage:(id)msg toPeer:(MCPeerID *)peer {
+    // convert single peer to array
+    NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
+    
+    // call overriden method
+    [self sendMessage:msg toPeers:peers];
+}
+
+- (void) sendMessage:(id)msg toPeers:(NSArray *)peers {
+    [self sendMessage:msg toPeers:peers asReliable:YES];
+}
+- (void) sendMessage:(id)msg toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
+     
     // serialize as JSON dictionary
     NSDictionary* json = [MTLJSONAdapter JSONDictionaryFromModel:msg];
     
     // convert to data object
-    NSData *msgData = [NSKeyedArchiver archivedDataWithRootObject:json];
-    
+    NSData *msgData = [NSKeyedArchiver archivedDataWithRootObject:[json copy]];
     NSError *error;
     // send message to specified peers ... using current session
     if (![self.session sendData:msgData
-                           toPeers:peers
-                          withMode:MCSessionSendDataReliable
-                             error:&error]) {
-        NSLog(@"[Error] sending data %@", error);
+                        toPeers:peers
+                       withMode:(reliable ? MCSessionSendDataReliable : MCSessionSendDataUnreliable)
+                          error:&error]) {
+        MPIError(@"[Error] sending data %@", error);
+        // if code is 1, then peer is not reachable
+        //
+        // TODO: how to handle case of single peer causing error?
+        //
+        if (error.code == 1) {
+            for ( int i = 0; i < peers.count; i++) {
+                [self.delegate peer:peers[i] didChangeState:MPIPeerStateDisconnected];
+            }
+        }
+        
+        // don't continue if there was an error
+        return;
     }
     
     // log to server
     NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
     [[MPIEventLogger sharedInstance] log:MPILoggerLevelInfo
-                            source:source
-                       description:@"sending message"
-                              tags:[[NSArray alloc] initWithObjects:@"Message", nil]
-                             start:sendDt
-                               end:nil
-                              data:json];
+                                  source:source
+                             description:@"sending message"
+                                    tags:[[NSArray alloc] initWithObjects:@"Message", nil]
+                                   start:[NSDate date]
+                                     end:nil
+                                    data:json];
 }
 
-#pragma mark - Private methods
 
-- (void)setupSession
+#pragma mark - Start or Stop session controller
+
+- (void)startup
 {
-    
     // Create the session that peers will be invited/join into.
     _session = [[MCSession alloc] initWithPeer:self.peerID];
     self.session.delegate = self;
     
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"created session for peerID: %@", self.peerID.displayName]];
+    MPIDebug(@"created session for peerID: %@", self.peerID.displayName);
     
+    // update local state
+    _mySessionState = MPILocalSessionStateCreated;
     
-    // Create the service advertiser
-    _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:self.peerID
-                                                           discoveryInfo:nil
-                                                             serviceType:kMCSessionServiceType];
-    self.serviceAdvertiser.delegate = self;
-    
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"created advertiser for peerID: %@", self.peerID.displayName]];
-    
-    
-    // Create the service browser
-    _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:self.peerID
-                                                       serviceType:kMCSessionServiceType];
-    self.serviceBrowser.delegate = self;
-    
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"created browser for peerID: %@", self.peerID.displayName]];
+
+    // advertise for a bit
+    [self startAdvertising];
+    // then switch to browse if no invite was received after
+    _advertiseTimer = [NSTimer scheduledTimerWithTimeInterval:kInitialAdvertiseSeconds target:self
+                                           selector:@selector(advertiseTimedOut:) userInfo:nil repeats:NO];
+
     
 }
 
-- (void)teardownSession
+- (void) advertiseTimedOut:(NSTimer *)incomingTimer
 {
-    
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"teardown session for peerID: %@", self.peerID.displayName]];
-    
-    [self.session disconnect];
-    [self.connectingPeersOrderedSet removeAllObjects];
-    [self.disconnectedPeersOrderedSet removeAllObjects];
-}
-// advertiser and browser controller
-- (void)startAdvertising
-{
-    NSLog(@"startAdvertising");
-    [self.serviceAdvertiser startAdvertisingPeer];
-}
-- (void)stopAdvertising
-{
-    NSLog(@"stopAdvertising");
-    [self.serviceAdvertiser stopAdvertisingPeer];
-}
-- (void)startBrowsing
-{
-    NSLog(@"startBrowsing");
-    [self.serviceBrowser startBrowsingForPeers];
-}
-- (void)stopBrowsing
-{
-    NSLog(@"stopBrowsing");
-    [self.serviceBrowser stopBrowsingForPeers];
-}
-
-- (void)startup
-{
-    
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"start services for peerID: %@", self.peerID.displayName]];
-    
-    [self setupSession];
-    
-    // TEST: only do this when switch is changed
-    //[self.serviceAdvertiser startAdvertisingPeer];
-    //[self.serviceBrowser startBrowsingForPeers];
+    MPIDebug(@"Advertise timed out, starting browser.");
+    // if invitation was not recieved ... and therefore the timer cancelled
+    // then stop advertising and start browsing
+    [self stopAdvertising];
+    [self startBrowsing];
 }
 
 - (void)shutdown
 {
+    MPIDebug(@"teardown session for peerID: %@", self.peerID.displayName);
     
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"stop services for peerID: %@", self.peerID.displayName]];
+    [self.session disconnect];
     
-    // TEST: only do this when switch is changed
-    //[self.serviceBrowser stopBrowsingForPeers];
-    //[self.serviceAdvertiser stopAdvertisingPeer];
+    // clear out advertiser and browser ... if created
+    _serviceBrowser = nil;
+    _serviceAdvertiser = nil;
     
-    [self teardownSession];
+    // update local state
+    _mySessionState = MPILocalSessionStateNotCreated;
 }
 
-- (void)updateDelegate
-{
-    _connectedPeers = self.session.connectedPeers;
-    _connectingPeers = [self.connectingPeersOrderedSet array];
-    _disconnectedPeers = [self.disconnectedPeersOrderedSet array];
-    
-    [self.delegate sessionDidChangeState];
-}
+#pragma mark - Control advertising and browsing
 
-- (NSString *)stringForPeerConnectionState:(MCSessionState)state
+// advertiser and browser controller
+- (void)startAdvertising
 {
-    switch (state) {
-        case MCSessionStateConnected:
-            return @"Connected";
-            
-        case MCSessionStateConnecting:
-            return @"Connecting";
-            
-        case MCSessionStateNotConnected:
-            return @"Not Connected";
+    // Create the service advertiser ... if not yet created
+    if (_serviceAdvertiser == nil) {
+        _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:self.peerID
+                                                               discoveryInfo:nil
+                                                                 serviceType:kMCSessionServiceType];
+        self.serviceAdvertiser.delegate = self;
+        
+        MPIDebug(@"created advertiser for peerID: %@", self.peerID.displayName);
     }
+    
+    NSLog(@"startAdvertising");
+    [self.serviceAdvertiser startAdvertisingPeer];
+    
+    _mySessionState = MPILocalSessionStateAdvertising;
+}
+- (void)stopAdvertising
+{
+    MPIDebug(@"stopAdvertising");
+    if (_serviceAdvertiser != nil) { [self.serviceAdvertiser stopAdvertisingPeer]; }
+    
+    // TODO: double check appropriate next state on advertise stop
+    _mySessionState = MPILocalSessionStateNotAdvertising;
+}
+- (void)startBrowsing
+{
+    // Create the service browser ... if not yet created
+    if (_serviceBrowser == nil) {
+        _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:self.peerID
+                                                           serviceType:kMCSessionServiceType];
+        self.serviceBrowser.delegate = self;
+        
+        MPIDebug(@"created browser for peerID: %@", self.peerID.displayName);
+    }
+    
+    MPIDebug(@"startBrowsing");
+    [self.serviceBrowser startBrowsingForPeers];
+    
+    _mySessionState = MPILocalSessionStateBrowsing;
+}
+- (void)stopBrowsing
+{
+    MPIDebug(@"stopBrowsing");
+    if (_serviceBrowser != nil) { [self.serviceBrowser stopBrowsingForPeers]; }
+    
+    // TODO: double check appropriate next state on browsing stop
+    _mySessionState = MPILocalSessionStateNotBrowsing;
 }
 
 #pragma mark - MCSessionDelegate protocol conformance
@@ -287,15 +294,13 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
 - (void)session:(MCSession *)session peer:(MCPeerID *)peerID didChangeState:(MCSessionState)state
 {
     
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"Peer [%@] changed state to %@", peerID.displayName, [self stringForPeerConnectionState:state]]];
+    MPIDebug(@"Peer [%@] changed state to %@.  There are now %lu connected.", peerID.displayName, [self stringForPeerConnectionState:state], (unsigned long)self.session.connectedPeers.count);
     
     switch (state)
     {
         case MCSessionStateConnecting:
         {
-            [self.connectingPeersOrderedSet addObject:peerID];
-            [self.disconnectedPeersOrderedSet removeObject:peerID];
+            [self.delegate peer:peerID didChangeState:MPIPeerStateDiscovered];
             break;
         }
             
@@ -310,87 +315,107 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
                 // initiate time sync & save self as time server
                 _timeServerPeerID = _peerID;
                 [[MPIGameManager instance] requestTimeSync:peerID value:0];
+                
+                // change peer state to time syncing
+                [self.delegate peer:peerID didChangeState:MPIPeerStateSyncingTime];
+                
+            } else {
+                // change peer state to inite accepted
+                [self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
             }
-            [self.connectingPeersOrderedSet removeObject:peerID];
-            [self.disconnectedPeersOrderedSet removeObject:peerID];
+            
+            // check if local session state should change to created
+            if (self.session.connectedPeers.count > 0) {
+                _mySessionState = MPILocalSessionStateConnected;
+            }
             break;
         }
             
         case MCSessionStateNotConnected:
         {
-            [self.connectingPeersOrderedSet removeObject:peerID];
-            [self.disconnectedPeersOrderedSet addObject:peerID];
+            // update peer connection status
+            [self.delegate peer:peerID didChangeState:MPIPeerStateDisconnected];
+            
+            // check if local session state should fall back to created
+            if (self.session.connectedPeers.count <= 0) {
+                _mySessionState = MPILocalSessionStateCreated;
+            }
             break;
         }
     }
     
-    [self updateDelegate];
 }
 
-- (void)session:(MCSession *)session didReceiveData:(NSData *)data fromPeer:(MCPeerID *)peerID
+- (void)session:(MCSession *)session didReceiveData:(NSData *)data fromPeer:(MCPeerID *)nearbyPeerID
 {
     // first unarchive
     id obj = [NSKeyedUnarchiver unarchiveObjectWithData:data];
     
+    //
+    // HACK, HACK, HACKY
+    //
     // then deserialize as from JSON if NSDictionary
     if ([obj isKindOfClass:[NSDictionary class]]){
         
-        NSError *error = nil;
-        MPIMessage *msg = [MTLJSONAdapter modelOfClass:[MPIMessage class] fromJSONDictionary:obj error:&error];
-        
+        NSString *msgType = obj[@"type"];
         // NEW: Log Message recieve event
         NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-        NSString* action = @"Display";
-        if ([msg.type isEqualToString:@"1"]) {
+        NSString* action = @"UNKOWN";
+        if ([msgType isEqualToString:@"1"]) {
             action = @"Flash";
-        } else if ([msg.type isEqualToString:@"2"]) {
+        } else if ([msgType isEqualToString:@"2"]) {
             action = @"Volume";
-        } else if ([msg.type isEqualToString:@"4"]) {
+        } else if ([msgType isEqualToString:@"4"]) {
             action = @"Time";
-        } else if ([msg.type isEqualToString:@"5"]) {
+        } else if ([msgType isEqualToString:@"5"]) {
             action = @"Sync Request";
+        } else if ([msgType isEqualToString:@"6"]) {
+            action = @"Song Info";
+        } else if ([msgType isEqualToString:@"7"]) {
+            action = @"Recording play/stop";
+        } else if ([msgType isEqualToString:@"8"]) {
+            action = @"Heartbeat";
         }
-        NSDate* start = msg.createdAt;
+        NSDate* start = [[MPIMessage dateFormatter] dateFromString:obj[@"createdAt"]];
         NSDate* end = [NSDate date];
         
-        NSString* description = [NSString stringWithFormat:@"HEY! %@ changed my %@", peerID.displayName, action];
+        NSString* description = [NSString stringWithFormat:@"%@ sent %@", nearbyPeerID.displayName, action];
         NSArray* tags = [[NSArray alloc] initWithObjects:@"Message", action, nil];
-        MPIEventPersistence status = [[MPIEventLogger sharedInstance] debug:source description:description tags:tags start:start end:end data:obj];
+        //MPIEventPersistence status =
+        [[MPIEventLogger sharedInstance] debug:source description:description tags:tags start:start end:end data:obj];
         
-        // re-route if OFFLINE
-        if (status == MPIEventPersistenceOffline) {
-            NSLog(@"EventLogger API is not reachable.  Re-routing through peer with reachability.");
-            //
-            // TODO: route message through session
-            //
-            // NOTE: will need to track if any peers have reachability
-        }
-        
-        // OLD
-        //NSLog(@"didReceiveData %@:%@ from %@", msg.type, msg.val, peerID.displayName);
-        
+        // handle sync and time messages differently
         if([action isEqualToString:@"Sync Request"]) {
             
             // save reference to peer which initiated sync
-            _timeServerPeerID = peerID;
+            _timeServerPeerID = nearbyPeerID;
             
             // initiate time sync with requestor
-            [[MPIGameManager instance] calculateTimeDeltaFrom:peerID];
+            [[MPIGameManager instance] calculateTimeDeltaFrom:nearbyPeerID];
+            
+            [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateSyncingTime];
             
         } else if([action isEqualToString:@"Time"]) {
-            NSLog(@"%@", _timeServerPeerID.displayName);
-            NSLog(@"%@", _peerID.displayName);
             //
             // DANGER: what if peers have the same display name
             if ([_timeServerPeerID.displayName isEqualToString:_peerID.displayName]) {
                 // this is the time server ... so just reply with timestamp
-                [self sendTimestamp:peerID];
+                [self sendTimestamp:nearbyPeerID];
+                
             } else {
                 // this is peer that is requesting sync
-                [[MPIGameManager instance] recievedTimestamp:peerID value:msg.val];
+                BOOL isDone = [[MPIGameManager instance] recievedTimestamp:nearbyPeerID value:0];
+                if (isDone) {
+                    [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateConnected];
+                    
+                    // now start heartbeat
+                    [[MPIGameManager instance] startHeartbeatWithPeer:nearbyPeerID];
+                }
+                
             }
         } else {
-            [[MPIGameManager instance] handleActionRequest:msg.type value:msg.val];
+            // default is to let the game manager handle the message
+            [[MPIGameManager instance] handleActionRequest:obj type:msgType fromPeer:nearbyPeerID];
         }
         
     }
@@ -399,17 +424,17 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
 
 - (void)session:(MCSession *)session didStartReceivingResourceWithName:(NSString *)resourceName fromPeer:(MCPeerID *)peerID withProgress:(NSProgress *)progress
 {
-    NSLog(@"didStartReceivingResourceWithName [%@] from %@ with progress [%@]", resourceName, peerID.displayName, progress);
+    MPIDebug(@"didStartReceivingResourceWithName [%@] from %@ with progress [%@]", resourceName, peerID.displayName, progress);
 }
 
-- (void)session:(MCSession *)session didFinishReceivingResourceWithName:(NSString *)resourceName fromPeer:(MCPeerID *)peerID atURL:(NSURL *)localURL withError:(NSError *)error
+- (void)session:(MCSession *)session didFinishReceivingResourceWithName:(NSString *)resourceName fromPeer:(MCPeerID *)fromPeerID atURL:(NSURL *)localURL withError:(NSError *)error
 {
-    NSLog(@"didFinishReceivingResourceWithName [%@] from %@", resourceName, peerID.displayName);
+    MPIDebug(@"didFinishReceivingResourceWithName [%@] from %@", resourceName, fromPeerID.displayName);
     
     // If error is not nil something went wrong
     if (error)
     {
-        NSLog(@"Error [%@] receiving resource from %@ ", [error localizedDescription], peerID.displayName);
+        MPIError(@"Error [%@] receiving resource from %@ ", [error localizedDescription], fromPeerID.displayName);
     }
     else
     {
@@ -418,15 +443,24 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
         // Write to documents directory
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *copyPath = [NSString stringWithFormat:@"%@/%@", [paths firstObject], resourceName];
-        if (![[NSFileManager defaultManager] copyItemAtPath:[localURL path] toPath:copyPath error:nil])
+        NSError* error;
+        
+        
+        //
+        // TODO: verify this works if the file does not exist yet
+        //
+        NSURL* resultingURL;
+        if (![[NSFileManager defaultManager] replaceItemAtURL:[NSURL fileURLWithPath:copyPath] withItemAtURL:localURL backupItemName:@"audiofile-backup" options:NSFileManagerItemReplacementUsingNewMetadataOnly resultingItemURL:&resultingURL error:&error])
         {
-            NSLog(@"Error copying resource to documents directory");
+            MPIError(@"Error copying resource to documents directory (%@) [%@]", copyPath, error);
         }
         else
         {
             // Get a URL for the path we just copied the resource to
-            NSURL *url = [NSURL fileURLWithPath:copyPath];
-            NSLog(@"url = %@", url);
+            MPIDebug(@"url = %@, copyPath = %@", resultingURL, copyPath);
+            
+            // tell game manager about it .. should use self ID ... since it was for self
+            [self.delegate session:self didReceiveAudioFileFrom:_peerID.displayName atPath:copyPath];
         }
     }
 }
@@ -434,7 +468,43 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
 // Streaming API not utilized in this sample code
 - (void)session:(MCSession *)session didReceiveStream:(NSInputStream *)stream withName:(NSString *)streamName fromPeer:(MCPeerID *)peerID
 {
-    NSLog(@"didReceiveStream %@ from %@", streamName, peerID.displayName);
+    MPIDebug(@"didReceiveStream %@ from %@", streamName, peerID.displayName);
+    if ([streamName isEqualToString:@"mic"]) {
+        [self.delegate session:self didReceiveAudioStream:stream];
+    } else if ([streamName isEqualToString:@"audio-file"]) {
+        [self.delegate session:self didReceiveAudioFileStream:stream];
+    }
+}
+
+- (NSOutputStream *)outputStreamForPeer:(MCPeerID *)peer withName:(NSString*)streamName
+{
+    NSError *error;
+    NSOutputStream *stream = [self.session startStreamWithName:streamName toPeer:peer error:&error];
+    
+    if (error) {
+        MPIError(@"Error: %@", [error userInfo].description);
+    }
+    
+    return stream;
+}
+
+- (void)sendAudioFileAtPath:(NSString*)filePath toPeer:(id)peerID
+{
+    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+    MPIDebug(@"Attempting send for file at %@", filePath);
+    
+    //
+    // TODO: hookup progress to UI
+    //
+    NSProgress *progress =
+        [self.session sendResourceAtURL:fileURL
+                               withName:[fileURL lastPathComponent]
+                                 toPeer:peerID
+                  withCompletionHandler:^(NSError *error)
+        {
+            if (error) { MPIError(@"[Error sending audio file] %@", error); return; }
+            MPIDebug(@"Done sending file: %@", filePath);
+        }];
 }
 
 #pragma mark - MCNearbyServiceBrowserDelegate protocol conformance
@@ -443,121 +513,101 @@ static NSString * const kMCSessionServiceType = @"mpi-shared";
 - (void)browser:(MCNearbyServiceBrowser *)browser foundPeer:(MCPeerID *)nearbyPeerID withDiscoveryInfo:(NSDictionary *)info
 {
     NSString *remotePeerName = nearbyPeerID.displayName;
+    MPIDebug(@"Browser found nearbyPeer (name: %@)", remotePeerName);
+    [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateDiscovered];
     
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"Browser found (name: %@)", remotePeerName]];
-    
-    MCPeerID *myPeerID = self.session.myPeerID;
-    
-    if (YES || [self sha1:myPeerID.displayName] > [self sha1:remotePeerName])
-    {
-        [[MPIEventLogger sharedInstance] info:source description:[NSString stringWithFormat:@"Inviting %@", remotePeerName]];
+    //
+    // TODO: are there other condition under which invitation should not be sent??
+    //
+    if (self.session != nil && _mySessionState != MPILocalSessionStateNotCreated) {
+        MPIDebug(@"Inviting %@", remotePeerName);
         
         // save invitation start for this peer
         _invitations[remotePeerName] = [[NSDate alloc] init];
         
-        [browser invitePeer:nearbyPeerID toSession:self.session withContext:nil timeout:10.0];
+        [browser invitePeer:nearbyPeerID toSession:self.session withContext:nil timeout:20.0];
+        
+        [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateInvited];
     }
-    else
-    {
-        [[MPIEventLogger sharedInstance] info:source description:[NSString stringWithFormat:@"Not inviting(my sha1: %@, remote sha1: %@)", [self sha1:myPeerID.displayName], [self sha1:remotePeerName]]];
+    else {
+        MPIDebug(@"Session not ready. Not inviting foundPeer: %@", remotePeerName);
     }
-    
-    [self updateDelegate];
+}
+
+- (NSString*)printSessionConnectedPeers
+{
+    NSString* output = @"";
+    for (int i = 0; i < self.session.connectedPeers.count; i++) {
+        MCPeerID* peerID = self.session.connectedPeers[i];
+        output = [output stringByAppendingString:peerID.displayName];
+    }
+    return output;
 }
 
 - (void)browser:(MCNearbyServiceBrowser *)browser lostPeer:(MCPeerID *)peerID
 {
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] info:source description:[NSString stringWithFormat:@"lostPeer %@", peerID.displayName]];
+    MPIDebug(@"lostPeer %@. session.connectedPeers: %@", peerID.displayName, [self printSessionConnectedPeers]);
     
-    [self.connectingPeersOrderedSet removeObject:peerID];
-    [self.disconnectedPeersOrderedSet addObject:peerID];
-    
-    [self updateDelegate];
+    // update peer connection state
+    [self.delegate peer:peerID didChangeState:MPIPeerStateDisconnected];
 }
 
 - (void)browser:(MCNearbyServiceBrowser *)browser didNotStartBrowsingForPeers:(NSError *)error
 {
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] warn:source description:[NSString stringWithFormat:@"didNotStartBrowsingForPeers: %@", error]];
+    MPIDebug(@"didNotStartBrowsingForPeers: %@", error);
+    
+    _mySessionState = MPILocalSessionStateNotBrowsing;
 }
 
 #pragma mark - MCNearbyServiceAdvertiserDelegate protocol conformance
 
 - (void)advertiser:(MCNearbyServiceAdvertiser *)advertiser didReceiveInvitationFromPeer:(MCPeerID *)peerID withContext:(NSData *)context invitationHandler:(void(^)(BOOL accept, MCSession *session))invitationHandler
 {
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] debug:source description:[NSString stringWithFormat:@"didReceiveInvitationFromPeer %@", peerID.displayName]];
+    MPIDebug(@"didReceiveInvitationFromPeer %@", peerID.displayName);
     
-    /*
-    [UIActionSheet showInView:self.view withTitle:[NSString stringWithFormat:NSLocalizedString(@"Received Invitation from %@", @"Received Invitation from {Peer}"), peerID.displayName]
-            cancelButtonTitle:NSLocalizedString(@"Reject", nil)
-       destructiveButtonTitle:NSLocalizedString(@"Block", nil)
-            otherButtonTitles:@[NSLocalizedString(@"Accept", nil)]
-                     tapBlock:^(UIActionSheet *actionSheet, NSInteger buttonIndex)
-     {
-         BOOL acceptedInvitation = (buttonIndex == [actionSheet firstOtherButtonIndex]);
-         
-         if (buttonIndex == [actionSheet destructiveButtonIndex]) {
-             // TODO: allow block
-             
-             //[self.mutableBlockedPeers addObject:peerID];
-         }
-         
-         invitationHandler(acceptedInvitation, (acceptedInvitation ? self.session : nil));
-         
-         [self.connectingPeersOrderedSet addObject:peerID];
-         [self.disconnectedPeersOrderedSet removeObject:peerID];
-         
-         [self updateDelegate];
-     }];
-     */
-    
+    // cancel advertise timer on receipt of invitation
+    [_advertiseTimer invalidate];
     
     //
-    // TODO: Only accept if not already in session
+    // Only accept if not already in session.
+    // This is to prevent multiple networks from being created.
     //
     
-    invitationHandler(YES, self.session);
-    
-    [self.connectingPeersOrderedSet addObject:peerID];
-    [self.disconnectedPeersOrderedSet removeObject:peerID];
-    
-    [self updateDelegate];
+    if (self.session.connectedPeers.count == 0) {
+        invitationHandler(YES, self.session);
+        // update peer state
+        [self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
+    } else {
+        MPIDebug(@"NOT accepting invitation from %@ since there are already %lu connected peers.", peerID.displayName, (unsigned long)self.session.connectedPeers.count);
+        invitationHandler(NO, self.session);
+        // update peer state
+        [self.delegate peer:peerID didChangeState:MPIPeerStateInviteDeclined];
+    }
 
 }
 
 - (void)advertiser:(MCNearbyServiceAdvertiser *)advertiser didNotStartAdvertisingPeer:(NSError *)error
 {
-    NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
-    [[MPIEventLogger sharedInstance] warn:source description:[NSString stringWithFormat:@"didNotStartAdvertisingForPeers: %@", error]];
+    MPIWarn(@"didNotStartAdvertisingForPeers: %@", error);
+    
+    _mySessionState = MPILocalSessionStateNotAdvertising;
 }
 
-/*
- * A custom hash function is needed since NSString.hash is device/cpu dependent.
- * This sha1 was taken from http://www.makebetterthings.com/iphone/how-to-get-md5-and-sha1-in-objective-c-ios-sdk/
- *
- * @param input - the string to compute a hash for 
- * @return the hashed value
- */
--(NSString*) sha1:(NSString*)input
+//
+// TODO: get rid of this .. only used for logging
+//
+- (NSString *)stringForPeerConnectionState:(MCSessionState)state
 {
-    const char *cstr = [input cStringUsingEncoding:NSUTF8StringEncoding];
-    NSData *data = [NSData dataWithBytes:cstr length:input.length];
-    
-    uint8_t digest[CC_SHA1_DIGEST_LENGTH];
-    
-    CC_SHA1(data.bytes, (unsigned int)data.length, digest);
-    
-    NSMutableString* output = [NSMutableString stringWithCapacity:CC_SHA1_DIGEST_LENGTH * 2];
-    
-    for(int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++){
-        [output appendFormat:@"%02x", digest[i]];
+    switch (state) {
+        case MCSessionStateConnected:
+            return @"Connected";
+            
+        case MCSessionStateConnecting:
+            return @"Connecting";
+            
+        case MCSessionStateNotConnected:
+            return @"Not Connected";
     }
-    
-    return output;
-    
 }
 
 @end
