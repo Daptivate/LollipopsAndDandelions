@@ -70,7 +70,7 @@
     [self killExpireNotification];
     
     // if peers connected, setup kill switch
-    if ([MPIGameManager instance].connectedPeers.count != 0)
+    if ([MPIGameManager instance].knownPeers.count != 0)
     {
         // create notification that will get the user back into the app when the background process time is about to expire
         //NSTimeInterval msgTime = UIApplication.sharedApplication.backgroundTimeRemaining - gracePeriod;

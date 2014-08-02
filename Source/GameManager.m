@@ -12,6 +12,9 @@
 #import "MPIEventLogger.h"
 #import <AVFoundation/AVFoundation.h>
 
+@implementation PeerInfo
+@end
+
 @interface MPIGameManager()
 @property (nonatomic, strong) AVCaptureSession *avSession;
 @property (nonatomic, strong) MPIAudioManager *audioManager;
@@ -39,14 +42,8 @@ static int const kHearbeatIntervalSeconds = 2;
 - (void)configure {
     
     
-    //
-    // TODO: refactor into single list with [PeerID, State]
-    //
-    _connectingPeers = [[NSMutableOrderedSet alloc] init];
-    _connectedPeers = [[NSMutableOrderedSet alloc] init];
-    _disconnectedPeers = [[NSMutableOrderedSet alloc] init];
-    
-    
+    // single list with [peerID, state, lastHeartbeat] for each discovered peer
+    _knownPeers = [[NSMutableDictionary alloc] init];
     
     // configure MCSession handling
     _sessionController = [[MPISessionController alloc] init];
@@ -176,55 +173,48 @@ static int const kHearbeatIntervalSeconds = 2;
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state
 {
     MPIDebug(@"LocalSession changed state: %ld", state);
+    switch(state){
+        case MPILocalSessionStateNotCreated:
+            _localSessionStateText = @"Not Created";
+            break;
+        case MPILocalSessionStateCreated:
+            _localSessionStateText = @"Created";
+            break;
+        case MPILocalSessionStateAdvertising:
+            _localSessionStateText = @"Advertising";
+            break;
+        case MPILocalSessionStateNotAdvertising:
+            _localSessionStateText = @"Not Advertising";
+            break;
+        case MPILocalSessionStateBrowsing:
+            _localSessionStateText = @"Browsing";
+            break;
+        case MPILocalSessionStateNotBrowsing:
+            _localSessionStateText = @"Not Browsing";
+            break;
+        case MPILocalSessionStateConnected:
+            _localSessionStateText = @"Connected";
+            break;
+    }
+    [self notifyLocalSessionChange];
 }
 
 - (void)peer:(MCPeerID *)peerID didChangeState:(MPIPeerState)state
 {
     MPIDebug(@"Peer (%@) changed state: %ld", peerID.displayName, state);
     
-    // then add to appropriate collection
-    switch(state) {
-        case MPIPeerStateConnected:
-            [self.connectedPeers addObject:peerID];
-            [self.connectingPeers removeObject:peerID];
-            [self.disconnectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateDisconnected:
-            [self.disconnectedPeers addObject:peerID];
-            [self.connectingPeers removeObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateDiscovered:
-            [self.connectingPeers addObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            [self.disconnectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateInvited:
-            [self.connectingPeers addObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            [self.disconnectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateInviteAccepted:
-            [self.connectedPeers addObject:peerID];
-            [self.connectingPeers removeObject:peerID];
-            [self.disconnectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateInviteDeclined:
-            [self.disconnectedPeers addObject:peerID];
-            [self.connectingPeers removeObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateSyncingTime:
-            [self.connectingPeers addObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            [self.disconnectedPeers removeObject:peerID];
-            break;
-        case MPIPeerStateStale:
-            [self.disconnectedPeers addObject:peerID];
-            [self.connectingPeers removeObject:peerID];
-            [self.connectedPeers removeObject:peerID];
-            break;
+    
+    if (![_knownPeers objectForKey:peerID]) {
+        // add as new known peer
+        PeerInfo* newPeer = [[PeerInfo alloc] init];
+        newPeer.peerID = peerID;
+        newPeer.state = state;
+        [_knownPeers setObject:newPeer forKey:peerID];
+    } else {
+        // update state
+        ((PeerInfo*)_knownPeers[peerID]).state = state;
     }
+    
     
     // Ensure UI updates occur on the main queue.
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -317,7 +307,7 @@ static int const kHearbeatIntervalSeconds = 2;
         
     } else if ([type isEqualToString:@"8"]) {
         
-        //MPIMessage *msg = [MTLJSONAdapter modelOfClass:[MPIMessage class] fromJSONDictionary:json error:&error];
+        MPIMessage *msg = [MTLJSONAdapter modelOfClass:[MPIMessage class] fromJSONDictionary:json error:&error];
         //NSLog(@"Received hearbeat from %@", msg.senderID);
         
         //
@@ -325,14 +315,23 @@ static int const kHearbeatIntervalSeconds = 2;
         // AND: queue up response
         //
         
-        if ([_connectingPeers containsObject:fromPeerID]) {
-            // on receipt of first heartbeat ... we know the time sync is complete
-            // notify that peer state is connected and ready to engage
-            [_sessionController.delegate peer:fromPeerID didChangeState:MPIPeerStateConnected];
-        } else if ([_disconnectedPeers containsObject:fromPeerID]) {
-            MPIWarn(@"Heartbeat received from disconnected peer %@", fromPeerID);
+        if ([_knownPeers objectForKey:fromPeerID]) {
+            // update heartbeat timestamp
+            ((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).lastHeartbeat = [NSDate dateWithTimeIntervalSince1970:[msg.val doubleValue]];
+            
+            if (((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state == MPIPeerStateSyncingTime) {
+                // on receipt of first heartbeat ... we know the time sync is complete
+                // notify that peer state is connected and ready to engage
+                [_sessionController.delegate peer:fromPeerID didChangeState:MPIPeerStateConnected];
+                
+            } else if (((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state != MPIPeerStateConnected) {
+                MPIWarn(@"Heartbeat received from non-connected peer %@ in state %ld", fromPeerID, ((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state);
+            }
+            
+            
+            // only manually trigger change notice here...
+            [self notifyPlayersChange];
         }
-        
     }
 }
 
@@ -380,6 +379,12 @@ static int const kHearbeatIntervalSeconds = 2;
     }
 }
 
+//
+// TODO: switch to ReactiveCocoa already...
+//
+- (void) notifyLocalSessionChange {
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"localSessionStateChanged" object:self];
+}
 - (void) notifyPlayersChange {
     [[NSNotificationCenter defaultCenter] postNotificationName:@"playerListChanged" object:self];
 }
@@ -493,10 +498,7 @@ static int const kHearbeatIntervalSeconds = 2;
     _avSession = nil;
     [[MPIMotionManager instance] stop];
     
-    
-    [self.connectingPeers removeAllObjects];
-    [self.connectedPeers removeAllObjects];
-    [self.disconnectedPeers removeAllObjects];
+    [_knownPeers removeAllObjects];
 }
 
 // every kHeartbeatIntervalSeconds ... to all peers
@@ -504,9 +506,14 @@ static int const kHearbeatIntervalSeconds = 2;
 {
     double timestamp = [[NSDate date] timeIntervalSince1970];
     // NOTE: sending to each individually ... to enable better understanding of connection status via send msg error
-    for (int i = 0; i < _connectedPeers.count; i++) {
-        MCPeerID* peerID = _connectedPeers[i];
-        [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:peerID asReliable:NO];
+    NSEnumerator *enumerator = [_knownPeers objectEnumerator];
+    PeerInfo* info;
+    while ((info = [enumerator nextObject])) {
+        // send heartbeat to connected peers
+        // TODO: ... or always try all??
+        if (info.state == MPIPeerStateConnected) {
+            [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:info.peerID asReliable:NO];
+        }
     }
 }
 

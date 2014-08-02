@@ -11,6 +11,12 @@
 #import "MPISongInfoMessage.h"
 #import "MPIMotionManager.h"
 
+@interface PeerInfo : NSObject
+    @property (readwrite) MCPeerID* peerID;
+    @property (readwrite) MPIPeerState state;
+    @property (readwrite) NSDate* lastHeartbeat;
+@end
+
 @interface MPIGameManager : NSObject<MPISessionControllerDelegate, MPIMotionManagerDelegate>
 
 + (MPIGameManager*)instance;
@@ -25,15 +31,14 @@
 // returns the system time plus delta based on time sync process
 - (NSDate*)currentTime;
 
-
-@property (nonatomic, readonly) NSMutableOrderedSet *connectingPeers;
-@property (nonatomic, readonly) NSMutableOrderedSet *connectedPeers;
-@property (nonatomic, readonly) NSMutableOrderedSet *disconnectedPeers;
+// contains list of PeerInfo objects for any known peers
+@property (nonatomic, readonly) NSMutableDictionary *knownPeers;
 
 
 @property (readwrite) NSNumber* volume;
 @property (readwrite) NSNumber* color;
 @property (readwrite) MPISongInfoMessage *lastSongMessage;
+@property (readwrite) NSString* localSessionStateText;
 
 - (void)requestFlashChange:(id)playerID value:(NSNumber*)val;
 - (void)requestSoundChange:(id)playerID value:(NSNumber*)val;

@@ -196,6 +196,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     
     // update local state
     _mySessionState = MPILocalSessionStateCreated;
+    [self.delegate session:self didChangeState:_mySessionState];
     
 
     // advertise for a bit
@@ -228,6 +229,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     
     // update local state
     _mySessionState = MPILocalSessionStateNotCreated;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 
 #pragma mark - Control advertising and browsing
@@ -249,6 +251,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     [self.serviceAdvertiser startAdvertisingPeer];
     
     _mySessionState = MPILocalSessionStateAdvertising;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 - (void)stopAdvertising
 {
@@ -257,6 +260,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     
     // TODO: double check appropriate next state on advertise stop
     _mySessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 - (void)startBrowsing
 {
@@ -273,6 +277,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     [self.serviceBrowser startBrowsingForPeers];
     
     _mySessionState = MPILocalSessionStateBrowsing;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 - (void)stopBrowsing
 {
@@ -281,6 +286,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     
     // TODO: double check appropriate next state on browsing stop
     _mySessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 
 #pragma mark - MCSessionDelegate protocol conformance
@@ -327,6 +333,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             // check if local session state should change to created
             if (self.session.connectedPeers.count > 0) {
                 _mySessionState = MPILocalSessionStateConnected;
+                [self.delegate session:self didChangeState:_mySessionState];
             }
             break;
         }
@@ -339,6 +346,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             // check if local session state should fall back to created
             if (self.session.connectedPeers.count <= 0) {
                 _mySessionState = MPILocalSessionStateCreated;
+                [self.delegate session:self didChangeState:_mySessionState];
             }
             break;
         }
@@ -557,6 +565,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIDebug(@"didNotStartBrowsingForPeers: %@", error);
     
     _mySessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 
 #pragma mark - MCNearbyServiceAdvertiserDelegate protocol conformance
@@ -591,6 +600,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIWarn(@"didNotStartAdvertisingForPeers: %@", error);
     
     _mySessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_mySessionState];
 }
 
 //

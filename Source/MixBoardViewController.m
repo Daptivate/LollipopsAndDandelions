@@ -36,6 +36,9 @@
     
     // configure changes to listen to
     
+    
+    // listen for session state change
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(localSessionStateChanged) name:@"localSessionStateChanged" object:nil];
     // listen for players change
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerListChanged) name:@"playerListChanged" object:nil];
     // listen for audio change
@@ -44,8 +47,6 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(colorChanged) name:@"colorChanged" object:nil];
     // listen for audio input stream
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioInChanged) name:@"audioInChanged" object:nil];
-    // listen for song changed
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioInSongChanged) name:@"songChanged" object:nil];
     
     // configure audio player
     [self configureAudio];
@@ -118,6 +119,14 @@
     });
 }
 
+- (void)localSessionStateChanged
+{
+    // Ensure UI updates occur on the main queue.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        _localSessionStateLabel.text = [MPIGameManager instance].localSessionStateText;
+    });
+}
+
 - (void)audioInChanged
 {
     // Ensure UI updates occur on the main queue.
@@ -152,7 +161,7 @@
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     // Return the number of rows in the section.
-    return [MPIGameManager instance].connectedPeers.count;
+    return [MPIGameManager instance].knownPeers.count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -160,25 +169,52 @@
     static NSString *CellIdentifier = @"PlayerCell";
     MPIMixBoardTableCell *cell = [tableView dequeueReusableCellWithIdentifier:CellIdentifier forIndexPath:indexPath];
     
-    NSArray *peers = [[MPIGameManager instance].connectedPeers array];
-    NSInteger peerIndex = indexPath.row;
-    if ((peers.count > 0) && (peerIndex < peers.count))
-    {
-        MCPeerID *peerID = [peers objectAtIndex:peerIndex];
-        
-        if (peerID)
-        {
-            cell.playerID = peerID;
-            cell.nameLabel.text = peerID.displayName;
-        }
+    NSEnumerator *peerEnumerator = [[MPIGameManager instance].knownPeers objectEnumerator];
+    PeerInfo* info;
+    int index = 0;
+    while ((info = [peerEnumerator nextObject])) {
+        // break when we find the right item based on index
+        if (indexPath.row == index) { break; }
+        index++;
     }
-    
-    // get player for cell
-    //MPIPlayer* player = [MPIPubNubManager pubnub].currentGame.players[indexPath.row];
-    
-    // Configure the cell...
-    //cell.player = player;
-    //cell.nameLabel.text = player.name;
+    if (info)
+    {
+        cell.playerID = info.peerID;
+        cell.nameLabel.text = info.peerID.displayName;
+        
+        NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+        dateFormatter.dateFormat = @"hh:mm:ss.SSS";
+        cell.lastHeartbeatTimeLabel.text = [dateFormatter stringFromDate:info.lastHeartbeat];
+        
+        NSString* stateText;
+        switch(info.state) {
+            case MPIPeerStateDiscovered:
+                stateText = @"Discovered";
+                break;
+            case MPIPeerStateInvited:
+                stateText = @"Invited";
+                break;
+            case MPIPeerStateInviteAccepted:
+                stateText = @"Invite Accepted";
+                break;
+            case MPIPeerStateInviteDeclined:
+                stateText = @"Invite Declined";
+                break;
+            case MPIPeerStateSyncingTime:
+                stateText = @"Syncing Time";
+                break;
+            case MPIPeerStateConnected:
+                stateText = @"Connected";
+                break;
+            case MPIPeerStateStale:
+                stateText = @"Stale";
+                break;
+            case MPIPeerStateDisconnected:
+                stateText = @"Disconnected";
+                break;
+        }
+        cell.peerStateLabel.text = stateText;
+    }
     
     return cell;
 }
