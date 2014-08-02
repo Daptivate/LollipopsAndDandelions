@@ -106,22 +106,22 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     [self sendMessage:@"4" value:time toPeer:peer];
 }
 
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer {
-    [self sendMessage:type value:val toPeer:peer asReliable:YES];
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer {
+    return [self sendMessage:type value:val toPeer:peer asReliable:YES];
 }
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable {
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable {
     
     // convert single peer to array
     NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
     
     // call overriden method
-    [self sendMessage:type value:val toPeers:peers asReliable:reliable];
+    return [self sendMessage:type value:val toPeers:peers asReliable:reliable];
 }
 
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers{
-    [self sendMessage:type value:val toPeers:peers asReliable:YES];
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers{
+    return [self sendMessage:type value:val toPeers:peers asReliable:YES];
 }
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
     NSDate* sendDt = [NSDate date];
     // create message object
     MPIMessage *msg = [[MPIMessage alloc] init];
@@ -130,21 +130,21 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     msg.createdAt = [[MPIEventLogger sharedInstance] timeWithOffset:sendDt];
 
     // use override
-    [self sendMessage:msg toPeers:peers];
+    return [self sendMessage:msg toPeers:peers];
 }
 
-- (void) sendMessage:(id)msg toPeer:(MCPeerID *)peer {
+- (BOOL) sendMessage:(id)msg toPeer:(MCPeerID *)peer {
     // convert single peer to array
     NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
     
     // call overriden method
-    [self sendMessage:msg toPeers:peers];
+    return [self sendMessage:msg toPeers:peers];
 }
 
-- (void) sendMessage:(id)msg toPeers:(NSArray *)peers {
-    [self sendMessage:msg toPeers:peers asReliable:YES];
+- (BOOL) sendMessage:(id)msg toPeers:(NSArray *)peers {
+    return [self sendMessage:msg toPeers:peers asReliable:YES];
 }
-- (void) sendMessage:(id)msg toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
+- (BOOL) sendMessage:(id)msg toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
      
     // serialize as JSON dictionary
     NSDictionary* json = [MTLJSONAdapter JSONDictionaryFromModel:msg];
@@ -158,18 +158,10 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                        withMode:(reliable ? MCSessionSendDataReliable : MCSessionSendDataUnreliable)
                           error:&error]) {
         MPIError(@"[Error] sending data %@", error);
-        // if code is 1, then peer is not reachable
-        //
-        // TODO: how to handle case of single peer causing error?
-        //
-        if (error.code == 1) {
-            for ( int i = 0; i < peers.count; i++) {
-                [self.delegate peer:peers[i] didChangeState:MPIPeerStateDisconnected];
-            }
-        }
         
         // don't continue if there was an error
-        return;
+        // let caller determine whether this should cause transition in peer state
+        return NO;
     }
     
     // log to server
@@ -181,6 +173,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                                    start:[NSDate date]
                                      end:nil
                                     data:json];
+    return YES;
 }
 
 

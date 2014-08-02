@@ -511,8 +511,15 @@ static int const kHearbeatIntervalSeconds = 2;
     while ((info = [enumerator nextObject])) {
         // send heartbeat to connected peers
         // TODO: ... or always try all??
-        if (info.state == MPIPeerStateConnected) {
-            [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:info.peerID asReliable:NO];
+        if (info.state != MPIPeerStateDisconnected) {
+            BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:info.peerID asReliable:NO];
+            if (!success) {
+                // mark disconnected if hearbeat fails
+                [_sessionController.delegate peer:info.peerID didChangeState:MPIPeerStateDisconnected];
+            } else if (info.state != MPIPeerStateConnected) {
+                // transition connected if not already
+                [_sessionController.delegate peer:info.peerID didChangeState:MPIPeerStateConnected];
+            }
         }
     }
 }

@@ -186,6 +186,12 @@
         dateFormatter.dateFormat = @"hh:mm:ss.SSS";
         cell.lastHeartbeatTimeLabel.text = [dateFormatter stringFromDate:info.lastHeartbeat];
         
+        // disable unless connected
+        [cell.soundSlider setEnabled:NO];
+        [cell.colorSlider setEnabled:NO];
+        [cell.flashSwitch setEnabled:NO];
+        [cell.recordButton setEnabled:NO];
+        
         NSString* stateText;
         switch(info.state) {
             case MPIPeerStateDiscovered:
@@ -205,6 +211,10 @@
                 break;
             case MPIPeerStateConnected:
                 stateText = @"Connected";
+                [cell.soundSlider setEnabled:YES];
+                [cell.colorSlider setEnabled:YES];
+                [cell.flashSwitch setEnabled:YES];
+                [cell.recordButton setEnabled:YES];
                 break;
             case MPIPeerStateStale:
                 stateText = @"Stale";
@@ -214,6 +224,7 @@
                 break;
         }
         cell.peerStateLabel.text = stateText;
+        
     }
     
     return cell;
