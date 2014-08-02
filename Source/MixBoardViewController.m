@@ -191,6 +191,7 @@
         [cell.colorSlider setEnabled:NO];
         [cell.flashSwitch setEnabled:NO];
         [cell.recordButton setEnabled:NO];
+        [cell.playThereButton setEnabled:NO];
         
         NSString* stateText;
         switch(info.state) {
@@ -215,6 +216,7 @@
                 [cell.colorSlider setEnabled:YES];
                 [cell.flashSwitch setEnabled:YES];
                 [cell.recordButton setEnabled:YES];
+                [cell.playThereButton setEnabled:YES];
                 break;
             case MPIPeerStateStale:
                 stateText = @"Stale";
