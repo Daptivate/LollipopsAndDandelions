@@ -14,6 +14,8 @@
 @property (strong, nonatomic) MCPeerID *playerID;
 
 @property (weak, nonatomic) IBOutlet UILabel *nameLabel;
+@property (weak, nonatomic) IBOutlet UILabel *peerStateLabel;
+@property (weak, nonatomic) IBOutlet UILabel *lastHeartbeatTimeLabel;
 @property (weak, nonatomic) IBOutlet UISlider *soundSlider;
 @property (weak, nonatomic) IBOutlet UISlider *colorSlider;
 @property (weak, nonatomic) IBOutlet UISwitch *flashSwitch;

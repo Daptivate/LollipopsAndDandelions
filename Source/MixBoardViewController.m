@@ -19,12 +19,6 @@
 
 @property (strong, nonatomic) AVAudioPlayer *audioPlayer;
 
-@property (weak, nonatomic) IBOutlet UIImageView *albumImage;
-@property (weak, nonatomic) IBOutlet UILabel *songTitle;
-@property (weak, nonatomic) IBOutlet UILabel *songArtist;
-
-@property (strong, nonatomic) MPMediaItem *song;
-
 @end
 
 
@@ -57,7 +51,7 @@
     [self configureAudio];
     
     // set name
-    _nameInput.text = [MPIGameManager instance].sessionController.displayName;
+    _nameLabel.text = [MPIGameManager instance].sessionController.displayName;
     
     // timer for updating clock
     [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(timerTick:) userInfo:nil repeats:YES];
@@ -133,15 +127,6 @@
     });
 }
 
-- (void)audioInSongChanged
-{
-    // Ensure UI updates occur on the main queue.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        _songArtist.text = [MPIGameManager instance].lastSongMessage.artist;
-        _songTitle.text = [MPIGameManager instance].lastSongMessage.title;
-    });
-}
-
 #pragma mark - Memory management
 
 - (void)dealloc
@@ -198,127 +183,8 @@
     return cell;
 }
 
-#pragma mark - Media Picker delegate
-
-- (void)mediaPicker:(MPMediaPickerController *)mediaPicker didPickMediaItems:(MPMediaItemCollection *)mediaItemCollection
-{
-    NSLog(@"Song selected.");
-    
-    if ([mediaItemCollection.items[0] valueForProperty:MPMediaItemPropertyAssetURL] == nil) {
-        NSLog(@"Song is protected.");
-        return;
-    }
-    
-    [self dismissViewControllerAnimated:YES completion:nil];
-    
-    // check if already streaming
-    //if (self.outputStreamer) return;
-    
-    self.song = [mediaItemCollection.items[0] copy];
-    
-    MPISongInfoMessage *info = [[MPISongInfoMessage alloc] init];
-    info.title = [self.song valueForProperty:MPMediaItemPropertyTitle] ? [self.song valueForProperty:MPMediaItemPropertyTitle] : @"";
-    info.artist = [self.song valueForProperty:MPMediaItemPropertyArtist] ? [self.song valueForProperty:MPMediaItemPropertyArtist] : @"";
-    
-    MPMediaItemArtwork *artwork = [self.song valueForProperty:MPMediaItemPropertyArtwork];
-    UIImage *image = [artwork imageWithSize:self.albumImage.frame.size];
-    if (image) {
-        //info.artwork = image;
-        self.albumImage.image = image;
-    }
-    else {
-        self.albumImage.image = nil;
-    }
-    
-    self.songTitle.text = info.title;
-    self.songArtist.text = info.artist;
-    
-    // TODO: refactor type into MPISongInfoMessage object
-    info.type = @"6";
-    info.createdAt = [[MPIEventLogger sharedInstance] timeWithOffset:[NSDate date]];
-    NSArray *peers = [[MPIGameManager instance].connectedPeers array];
-    
-    // TODO: send song info and stream to all peers
-    if (peers.count) {
-        [[MPIGameManager instance].sessionController sendMessage:info toPeer:peers[0]];
-        
-        NSLog(@"FILE STREAMING DISABLED");
-        /*
-        self.outputStreamer = [[TDAudioOutputStreamer alloc] initWithOutputStream:[[MPIGameManager instance].sessionController outputStreamForPeer:peers[0]]];
-        
-        [self.outputStreamer streamAudioFromSong:mediaItemCollection.items[0]];
-        //[self.outputStreamer streamAudioFromURL:[self.song valueForProperty:MPMediaItemPropertyAssetURL]];
-        [self.outputStreamer start];
-         */
-    }
-    
-}
-
-- (void)mediaPickerDidCancel:(MPMediaPickerController *)mediaPicker
-{
-    NSLog(@"Cancelled media picker.");
-    [self dismissViewControllerAnimated:YES completion:nil];
-}
-
 
 #pragma mark - Touch ACTIONS
-
-- (IBAction)songsClicked:(id)sender {
-    MPMediaPickerController *picker = [[MPMediaPickerController alloc] initWithMediaTypes:MPMediaTypeMusic];
-    picker.allowsPickingMultipleItems = NO;
-    picker.prompt = @"Select song to stream.";
-    picker.delegate = self;
-    [self presentViewController:picker animated:YES completion:nil];
-}
-
-- (IBAction)advertiseChanged:(id)sender {
-    UISwitch* advertiseSwitch = (UISwitch*)sender;
-    
-    if (advertiseSwitch.isOn) {
-        [[MPIGameManager instance].sessionController startAdvertising];
-    } else {
-        [[MPIGameManager instance].sessionController stopAdvertising];
-    }
-
-}
-
-- (IBAction)browseChanged:(id)sender {
-    UISwitch* advertiseSwitch = (UISwitch*)sender;
-    
-    if (advertiseSwitch.isOn) {
-        [[MPIGameManager instance].sessionController startBrowsing];
-    } else {
-        [[MPIGameManager instance].sessionController stopBrowsing];
-    }
-}
-
-- (IBAction)micChanged:(id)sender {
-    UISwitch* micSwitch = (UISwitch*)sender;
-    
-    if (micSwitch.isOn) {
-        NSArray *peers = [[MPIGameManager instance].connectedPeers array];
-        NSOutputStream *outputStream = nil;
-        
-        //
-        // TODO: send song info and stream to all peers
-        //
-        if (peers.count) {
-            outputStream = [[MPIGameManager instance].sessionController outputStreamForPeer:peers[0] withName:@"mic"];
-        }
-        [[MPIGameManager instance] startEcho:outputStream];
-    } else {
-        [[MPIGameManager instance] stopEcho];
-    }
-}
-
-- (IBAction)logToApiChanged:(id)sender {
-    UISwitch* apiSwitch = (UISwitch*)sender;
-    if (apiSwitch.isOn) {
-        [MPIEventLogger sharedInstance].logDestination = MPILogDestinationALL;
-    } else {
-        [MPIEventLogger sharedInstance].logDestination = MPILogDestinationConsole;
-    }
-}
 
 - (IBAction)reverbChanged:(id)sender {
     [[MPIGameManager instance] changeReverb:((UISwitch*)sender).isOn];
