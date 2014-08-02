@@ -218,7 +218,7 @@ static void audioCallback(__unsafe_unretained MPIAudioStreamer *THIS,
                                                 NULL,
                                                 AEAudioControllerAudioDescription(_audioController));
         
-        NSLog(@"fillCount (%i) > frames (%i)", fillCount, frames);
+        NSLog(@"fillCount (%i) > frames (%i)", (unsigned int)fillCount, (unsigned int)frames);
     }
     
     // if there is no data ... play oscillator
