@@ -105,6 +105,9 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 // Local session changed state
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state;
 
+// There are no more connected peers ... triggered via didChangeState
+- (void)session:(MPISessionController *)session allDisconnectedViaPeer:(MCPeerID*)peerID;
+
 // raw audio input ... e.g. - mic
 - (void)session:(MPISessionController *)session didReceiveAudioStream:(NSInputStream *)stream;
 

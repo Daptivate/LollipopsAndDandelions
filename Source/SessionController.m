@@ -321,8 +321,14 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             
             // check if local session state should fall back to created
             if (self.session.connectedPeers.count <= 0) {
-                _mySessionState = MPILocalSessionStateCreated;
-                [self.delegate session:self didChangeState:_mySessionState];
+                //_mySessionState = MPILocalSessionStateCreated;
+                //[self.delegate session:self didChangeState:_mySessionState];
+                
+                //
+                //TEST: let GameManager handle this detection
+                //
+                // notify delegate that MCSession thinks there are no more connected peers
+                //[self.delegate session:self allDisconnectedViaPeer:peerID];
             }
             break;
         }
@@ -551,8 +557,12 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     MPIDebug(@"didReceiveInvitationFromPeer %@", peerID.displayName);
     
-    // cancel advertise timer on receipt of invitation
-    [_advertiseTimer invalidate];
+    if (_advertiseTimer) {
+        MPIDebug(@"INVALIDATING ADVERTISE TIMER");
+        // cancel advertise timer on receipt of invitation
+        [_advertiseTimer invalidate];
+        _advertiseTimer = nil;
+    }
     
     //
     // Only accept if not already in session.

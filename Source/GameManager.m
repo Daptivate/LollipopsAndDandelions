@@ -18,11 +18,13 @@
 @property (nonatomic, strong) MPIAudioManager *audioManager;
 @property double lastTimestampSend;
 @property (nonatomic, strong) NSTimer* heartbeatTimer;
+@property (nonatomic, strong) NSTimer* sessionResetTimer;
 @end
 
 
 static int const kTimeSyncIterations = 10;
 static int const kHearbeatIntervalSeconds = 2;
+static int const kDiconnectedSessionResetTimeout = 10;
 
 @implementation MPIGameManager
 
@@ -225,7 +227,10 @@ static int const kHearbeatIntervalSeconds = 2;
             _localSessionStateText = @"Connected";
             break;
     }
-    [self notifyLocalSessionChange];
+    // Ensure UI updates occur on the main queue.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self notifyLocalSessionChange];
+    });
 }
 
 - (void)peer:(MCPeerID *)nearbyPeerID didChangeState:(MPIPeerState)state
@@ -246,6 +251,16 @@ static int const kHearbeatIntervalSeconds = 2;
         player.state = state;
     }
     
+    if (state == MPIPeerStateDisconnected &&                // if state transitioned to disconnected
+        player.lastHeartbeatSentToPeerAt != nil &&          // and there was previously a connection
+        [self allPlayersAre:MPIPeerStateDisconnected]) {    // and there are no other connected peers
+                                                            // then, queue up reset
+        _sessionResetTimer = [NSTimer scheduledTimerWithTimeInterval:kDiconnectedSessionResetTimeout target:self
+                                       selector:@selector(resetLocalSessionIfNoneConnected:) userInfo:nil repeats:NO];
+    } else if (state != MPIPeerStateDisconnected) {
+        // cancel reset timer ... if a peer transitions out of Disconnected state
+        if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
+    }
     
     // Ensure UI updates occur on the main queue.
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -268,6 +283,13 @@ static int const kHearbeatIntervalSeconds = 2;
 {
     // add as new audio loop ... but don't play until receiving command
     [_audioManager addAudioLoop:playerName forURL:[NSURL fileURLWithPath:filePath] andPlay:YES];
+}
+
+- (void)session:(MPISessionController *)session allDisconnectedViaPeer:(MCPeerID*)peerID
+{
+    // queue up reset
+    _sessionResetTimer = [NSTimer scheduledTimerWithTimeInterval:kDiconnectedSessionResetTimeout target:self
+                                                     selector:@selector(resetLocalSessionIfNoneConnected:) userInfo:nil repeats:NO];
 }
 
 
@@ -354,14 +376,22 @@ static int const kHearbeatIntervalSeconds = 2;
             // notify that peer state is connected and ready to engage
             [_sessionController.delegate peer:fromPeerID didChangeState:MPIPeerStateConnected];
             
-        } else if (player.state != MPIPeerStateConnected) {
-            MPIWarn(@"Heartbeat received from non-connected peer %@ in state %d", fromPeerID, player.state);
+        } else if (player.state == MPIPeerStateDisconnected) {
             
             //
             // TODO: reset session??
             // not yet... first try to self-heal connection by resetting the peer
             // who is able to send but is not receiving...
             //
+            NSTimeInterval timeSinceLastSend = [player.lastHeartbeatReceivedFromPeerAt timeIntervalSinceDate:player.lastHeartbeatSentToPeerAt];
+            
+            
+            MPIWarn(@"Heartbeat received from non-connected peer %@ in state %d. Seconds since last send:%f", fromPeerID, player.state, timeSinceLastSend);
+            
+            // reset if this happens for 3 heartbeats in a row
+            if (timeSinceLastSend > 6.0f) {
+                [self resetLocalSession];
+            }
         }
         
         
@@ -536,9 +566,44 @@ static int const kHearbeatIntervalSeconds = 2;
     [_knownPlayers removeAllObjects];
 }
 
+- (BOOL) allPlayersAre:(MPIPeerState)state
+{
+    NSEnumerator *enumerator = [_knownPlayers objectEnumerator];
+    MPIPlayer* player;
+    while ((player = [enumerator nextObject])) {
+        if (player.state != state) { return NO; }
+    }
+    return YES;
+}
+
+- (void) resetLocalSessionIfNoneConnected:(NSTimer *)incomingTimer
+{
+    MPIDebug(@"Checking if all peers are disconnected");
+    // make sure all known are not connected
+    if ([self allPlayersAre:MPIPeerStateDisconnected]) {
+    
+        // if so ... reset known peers
+        // TODO:
+        
+        
+        // and local session
+        [self resetLocalSession];
+    }
+    
+}
+
 - (void) resetLocalSession
 {
-    //MPISessionController *oldSessionController = _sessionController;
+    
+    MPIDebug(@"Resetting local session.");
+    
+    // cancel reset timer
+    if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
+    
+    MPISessionController *oldSessionController = _sessionController;
+    [oldSessionController stopAdvertising];
+    [oldSessionController stopBrowsing];
+    [_knownPlayers removeAllObjects];
     
     //
     // TEST: ... first try creating a new session controller
@@ -546,6 +611,10 @@ static int const kHearbeatIntervalSeconds = 2;
     
     _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer];
     self.sessionController.delegate = self;
+    
+    // clear out previous session and known players
+    //[oldSessionController shutdown];
+    //oldSessionController = nil;
     
     [_sessionController startup];
 }
@@ -571,6 +640,9 @@ static int const kHearbeatIntervalSeconds = 2;
                 // transition connected if not already
                 [_sessionController.delegate peer:player.peerID didChangeState:MPIPeerStateConnected];
             }
+            
+            //always update last sent date on success
+            if (success) { player.lastHeartbeatSentToPeerAt = [NSDate new]; }
         }
     }
 }
