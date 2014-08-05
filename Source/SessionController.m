@@ -8,6 +8,7 @@
 
 #import "SessionController.h"
 #import "GameManager.h"
+#import "Player.h"
 #import "Message.h"
 #import "MPIEventLogger.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -17,7 +18,6 @@
 @property (readwrite) MPILocalSessionState mySessionState;  // track state of managed MCSession
 @property (readwrite) MPIPeerState myPeerState;             // track state of local peer
 
-@property (nonatomic, strong) MCPeerID *peerID;
 @property (nonatomic, strong) MCSession *session;
 @property (nonatomic, strong) MCNearbyServiceAdvertiser *serviceAdvertiser;
 @property (nonatomic, strong) MCNearbyServiceBrowser *serviceBrowser;
@@ -40,48 +40,25 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 
 #pragma mark - Initializer
 
-- (instancetype)init
+- (instancetype)initForPlayer:(MPIPlayer*)player
 {
     self = [super init];
     
     if (self)
     {
+        // it is assumed that the player ID and displayName
+        // have been initialized prior to calling this method
+        _localPlayer = player;
+        
+        // default initial state
         _mySessionState = MPILocalSessionStateNotCreated;
         
-        // capture function name for event logging
-        //NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
         
-        
-        NSString *nameWithUUID = [[NSString alloc] initWithFormat:@"%@ (%@)",[[UIDevice currentDevice] name], [[NSUUID UUID] UUIDString]];
-        _peerID = [[MCPeerID alloc] initWithDisplayName:nameWithUUID];
-        
-        /*
-        // check if this device has a saved peer ID
-        NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-        NSData *peerIDData = [userDefaults dataForKey:kLocalPeerIDKey];
-        if (peerIDData == nil) {
-            // create and store once
-            //
-            // TODO: get this using JBDeviceOwner or similar on first launch
-            _peerID = [[MCPeerID alloc] initWithDisplayName:[[UIDevice currentDevice] name]];
-            // save to user defaults
-            NSData *peerIDData = [NSKeyedArchiver archivedDataWithRootObject:_peerID];
-            [userDefaults setObject:peerIDData forKey:kLocalPeerIDKey];
-            [userDefaults synchronize];
-            
-            [[MPIEventLogger sharedInstance] log:source description:@"created and saved peerID"];
-        } else {
-            // get existing peerID from defaults
-            _peerID = [NSKeyedUnarchiver unarchiveObjectWithData:peerIDData];
-            
-            [[MPIEventLogger sharedInstance] log:source description:@"retrieved existing peerID"];
-        }
-         */
+        NSString *nameWithUUID = [[NSString alloc] initWithFormat:@"%@ <%@>", player.displayName, [[NSUUID UUID] UUIDString]];
+        _localPlayer.peerID = [[MCPeerID alloc] initWithDisplayName:nameWithUUID];
         
         
         _invitations = [[NSMutableDictionary alloc] init];
-        
-        _displayName = _peerID.displayName;
     }
     
     return self;
@@ -188,10 +165,10 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 - (void)startup
 {
     // Create the session that peers will be invited/join into.
-    _session = [[MCSession alloc] initWithPeer:self.peerID];
+    _session = [[MCSession alloc] initWithPeer:_localPlayer.peerID];
     self.session.delegate = self;
     
-    MPIDebug(@"created session for peerID: %@", self.peerID.displayName);
+    MPIDebug(@"created session for: %@", _localPlayer.displayName);
     
     // update local state
     _mySessionState = MPILocalSessionStateCreated;
@@ -218,7 +195,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 
 - (void)shutdown
 {
-    MPIDebug(@"teardown session for peerID: %@", self.peerID.displayName);
+    MPIDebug(@"teardown session for: %@", _localPlayer.displayName);
     
     [self.session disconnect];
     
@@ -238,15 +215,15 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     // Create the service advertiser ... if not yet created
     if (_serviceAdvertiser == nil) {
-        _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:self.peerID
+        _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:_localPlayer.peerID
                                                                discoveryInfo:nil
                                                                  serviceType:kMCSessionServiceType];
         self.serviceAdvertiser.delegate = self;
         
-        MPIDebug(@"created advertiser for peerID: %@", self.peerID.displayName);
+        MPIDebug(@"created advertiser for: %@", _localPlayer.displayName);
     }
     
-    NSLog(@"startAdvertising");
+    MPIDebug(@"startAdvertising");
     [self.serviceAdvertiser startAdvertisingPeer];
     
     _mySessionState = MPILocalSessionStateAdvertising;
@@ -265,11 +242,11 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     // Create the service browser ... if not yet created
     if (_serviceBrowser == nil) {
-        _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:self.peerID
+        _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:_localPlayer.peerID
                                                            serviceType:kMCSessionServiceType];
         self.serviceBrowser.delegate = self;
         
-        MPIDebug(@"created browser for peerID: %@", self.peerID.displayName);
+        MPIDebug(@"created browser for: %@", _localPlayer.displayName);
     }
     
     MPIDebug(@"startBrowsing");
@@ -318,7 +295,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                 [[MPIEventLogger sharedInstance] info:@"Invitation" description:description tags:tags start:inviteBeganAt end:[[NSDate alloc] init]];
                 
                 // initiate time sync & save self as time server
-                _timeServerPeerID = _peerID;
+                _timeServerPeerID = _localPlayer.peerID;
                 [[MPIGameManager instance] requestTimeSync:peerID value:0];
                 
                 // change peer state to time syncing
@@ -398,20 +375,21 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             _timeServerPeerID = nearbyPeerID;
             
             // initiate time sync with requestor
-            [[MPIGameManager instance] calculateTimeDeltaFrom:nearbyPeerID];
+            [[MPIGameManager instance] calculateTimeDeltaFromPeer:nearbyPeerID];
             
             [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateSyncingTime];
             
         } else if([action isEqualToString:@"Time"]) {
             //
             // DANGER: what if peers have the same display name
-            if ([_timeServerPeerID.displayName isEqualToString:_peerID.displayName]) {
+            // HA! No longer a problem with unique ID generation
+            if ([_timeServerPeerID.displayName isEqualToString:_localPlayer.peerID.displayName]) {
                 // this is the time server ... so just reply with timestamp
                 [self sendTimestamp:nearbyPeerID];
                 
             } else {
                 // this is peer that is requesting sync
-                BOOL isDone = [[MPIGameManager instance] recievedTimestamp:nearbyPeerID value:0];
+                BOOL isDone = [[MPIGameManager instance] recievedTimestampFromPeer:nearbyPeerID value:0];
                 if (isDone) {
                     [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateConnected];
                     
@@ -467,7 +445,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             MPIDebug(@"url = %@, copyPath = %@", resultingURL, copyPath);
             
             // tell game manager about it .. should use self ID ... since it was for self
-            [self.delegate session:self didReceiveAudioFileFrom:_peerID.displayName atPath:copyPath];
+            [self.delegate session:self didReceiveAudioFileFrom:_localPlayer.peerID atPath:copyPath];
         }
     }
 }

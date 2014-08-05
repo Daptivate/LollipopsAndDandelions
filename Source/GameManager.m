@@ -7,19 +7,16 @@
 //
 
 #import "GameManager.h"
+#import "Player.h"
 #import "AudioManager.h"
 #import "ActionMessage.h"
 #import "MPIEventLogger.h"
 #import <AVFoundation/AVFoundation.h>
 
-@implementation PeerInfo
-@end
-
 @interface MPIGameManager()
 @property (nonatomic, strong) AVCaptureSession *avSession;
 @property (nonatomic, strong) MPIAudioManager *audioManager;
-@property double lastSendTimestamp;
-@property (nonatomic, strong) NSMutableArray *timeLatencies;
+@property double lastTimestampSend;
 @property (nonatomic, strong) NSTimer* heartbeatTimer;
 @end
 
@@ -33,6 +30,9 @@ static int const kHearbeatIntervalSeconds = 2;
     
     self = [super init];
     if (self) {
+        // create local player and set display name
+        _localPlayer = [[MPIPlayer alloc] init];
+        _localPlayer.displayName = [[UIDevice currentDevice] name];
         // initial configuration
         [self configure];
     }
@@ -43,10 +43,10 @@ static int const kHearbeatIntervalSeconds = 2;
     
     
     // single list with [peerID, state, lastHeartbeat] for each discovered peer
-    _knownPeers = [[NSMutableDictionary alloc] init];
+    _knownPlayers = [[NSMutableDictionary alloc] init];
     
     // configure MCSession handling
-    _sessionController = [[MPISessionController alloc] init];
+    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer];
     self.sessionController.delegate = self;
     
     _audioManager = [[MPIAudioManager alloc] init];
@@ -74,19 +74,46 @@ static int const kHearbeatIntervalSeconds = 2;
 {
     // Nil out delegates
     _sessionController.delegate = nil;
+    [MPIMotionManager instance].delegate = nil;
     
     _avSession = nil;
 }
 
+#pragma mark - Private class methods
+
+- (MPIPlayer*) playerForPeerID:(MCPeerID*)peerID
+{
+    // default to logging if trying to lookup peer that doesn't exist
+    return [self playerForPeerID:peerID logError:YES];
+}
+- (MPIPlayer*) playerForPeerID:(MCPeerID*)peerID logError:(BOOL)doLog
+{
+    NSEnumerator *enumerator = [_knownPlayers objectEnumerator];
+    MPIPlayer* player;
+    while ((player = [enumerator nextObject])) {
+        if ([player.peerID isEqual:peerID]) {
+            return player;
+        }
+    }
+    
+    if (doLog) { MPIError(@"No Player for PeerID: %@", peerID); }
+    return nil;
+}
+
 #pragma mark - Time sync
 // initiates simple algorithm to calculate system time delta with specified player
-- (void)calculateTimeDeltaFrom:(id)playerID
+- (void)calculateTimeDeltaFromPeer:(id)nearbyPeerID
 {
+    // lookup player for peer
+    MPIPlayer* player = [self playerForPeerID:nearbyPeerID];
+    if (!player) { return; }
+    
     // first clear latency array so that we can refresh values
-    _timeLatencies = [[NSMutableArray alloc] init];
+    player.timeLatencySamples = [[NSMutableArray alloc] init];
+    
     // send first message to kick off the process
-    _lastSendTimestamp = [[NSDate date] timeIntervalSince1970];
-    [_sessionController sendTimestamp:[[NSNumber alloc] initWithDouble:_lastSendTimestamp] toPeer:playerID];
+    _lastTimestampSend = [[NSDate date] timeIntervalSince1970];
+    [_sessionController sendTimestamp:[[NSNumber alloc] initWithDouble:_lastTimestampSend] toPeer:nearbyPeerID];
 }
 // returns the system time plus delta based on time sync process
 - (NSDate*)currentTime
@@ -94,29 +121,31 @@ static int const kHearbeatIntervalSeconds = 2;
     return [NSDate dateWithTimeIntervalSinceNow:_timeDeltaSeconds];
 }
 
-- (BOOL)recievedTimestamp:(id)playerID value:(NSNumber *)val
+- (BOOL)recievedTimestampFromPeer:(id)nearbyPeerID value:(NSNumber *)val
 {
-    NSLog(@"%lu", (unsigned long)_timeLatencies.count);
+    // lookup player for peer
+    MPIPlayer* player = [self playerForPeerID:nearbyPeerID];
+    if (!player) { return YES; } // signal done on error
     
     double localTimestamp = [[NSDate date] timeIntervalSince1970];
     double serverTimestamp = [val doubleValue];
     
     // calculate current iteration latency
-    double latency = (localTimestamp - _lastSendTimestamp) / 2;
-    [_timeLatencies addObject:[[NSNumber alloc] initWithDouble:latency]];
+    double latency = (localTimestamp - _lastTimestampSend) / 2;
+    [player.timeLatencySamples addObject:[[NSNumber alloc] initWithDouble:latency]];
     
     
     // check how many latency calculations we have
-    if (_timeLatencies.count >= kTimeSyncIterations) {
+    if (player.timeLatencySamples.count >= kTimeSyncIterations) {
         // done with sync process ... calculate final offset
         double total;
         total = 0;
-        for(NSNumber *value in _timeLatencies){
+        for(NSNumber *value in player.timeLatencySamples){
             total+=[value floatValue];
         }
         
         // average latencies
-        double averageLatency = total / _timeLatencies.count;
+        double averageLatency = total / player.timeLatencySamples.count;
         
         // save final offset
         _timeDeltaSeconds = serverTimestamp - localTimestamp + averageLatency;
@@ -129,7 +158,7 @@ static int const kHearbeatIntervalSeconds = 2;
         // tell caller that we are done
         return YES;
         
-    } else if (_timeLatencies.count == 1) {
+    } else if (player.timeLatencySamples.count == 1) {
         
         // save first iteration offset
         _timeDeltaSeconds = serverTimestamp - localTimestamp + latency;
@@ -137,10 +166,10 @@ static int const kHearbeatIntervalSeconds = 2;
     }
     
     // save last send with initially calculated offset
-    _lastSendTimestamp = [[NSDate date] timeIntervalSince1970] + _timeDeltaSeconds;
+    _lastTimestampSend = [[NSDate date] timeIntervalSince1970] + _timeDeltaSeconds;
     
     // send back to server
-    [_sessionController sendTimestamp:[[NSNumber alloc] initWithDouble:_lastSendTimestamp] toPeer:_sessionController.timeServerPeerID];
+    [_sessionController sendTimestamp:[[NSNumber alloc] initWithDouble:_lastTimestampSend] toPeer:_sessionController.timeServerPeerID];
     
     //NSLog(@"local: %f, server: %f, latency: %f, lastSend: %f",
     //      localTimestamp, serverTimestamp, latency, _lastSendTimestamp);
@@ -172,7 +201,7 @@ static int const kHearbeatIntervalSeconds = 2;
 
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state
 {
-    MPIDebug(@"LocalSession changed state: %ld", state);
+    MPIDebug(@"LocalSession changed state: %d", state);
     switch(state){
         case MPILocalSessionStateNotCreated:
             _localSessionStateText = @"Not Created";
@@ -199,20 +228,22 @@ static int const kHearbeatIntervalSeconds = 2;
     [self notifyLocalSessionChange];
 }
 
-- (void)peer:(MCPeerID *)peerID didChangeState:(MPIPeerState)state
+- (void)peer:(MCPeerID *)nearbyPeerID didChangeState:(MPIPeerState)state
 {
-    MPIDebug(@"Peer (%@) changed state: %ld", peerID.displayName, state);
+    MPIDebug(@"Peer (%@) changed state: %d", nearbyPeerID.displayName, state);
     
-    
-    if (![_knownPeers objectForKey:peerID]) {
-        // add as new known peer
-        PeerInfo* newPeer = [[PeerInfo alloc] init];
-        newPeer.peerID = peerID;
-        newPeer.state = state;
-        [_knownPeers setObject:newPeer forKey:peerID];
+    // lookup player for peer ... ignore not found error/logging
+    MPIPlayer* player = [self playerForPeerID:nearbyPeerID logError:NO];
+    if (!player) {
+        // add as new known player
+        MPIPlayer* newPlayer = [[MPIPlayer alloc] init];
+        newPlayer.displayName = nearbyPeerID.displayName;
+        newPlayer.peerID = nearbyPeerID;
+        newPlayer.state = state;
+        [_knownPlayers setObject:newPlayer forKey:newPlayer.playerID];
     } else {
         // update state
-        ((PeerInfo*)_knownPeers[peerID]).state = state;
+        player.state = state;
     }
     
     
@@ -287,7 +318,7 @@ static int const kHearbeatIntervalSeconds = 2;
         [_audioManager setLoopVolume:[msg.val floatValue] name:@"drums"];
         
         
-        [_audioManager setLoopVolume:[msg.val floatValue]*1.5 name:[_sessionController displayName]];
+        [_audioManager setLoopVolume:[msg.val floatValue]*1.5 name:_localPlayer.displayName];
         
     } else if ([type isEqualToString:@"4"]) {
         // timestamp handled by session controller
@@ -303,35 +334,39 @@ static int const kHearbeatIntervalSeconds = 2;
         
         MPIMessage *msg = [MTLJSONAdapter modelOfClass:[MPIMessage class] fromJSONDictionary:json error:&error];
         // start / stop play of recording
-        [_audioManager muteLoop:![msg.val boolValue] name:[_sessionController displayName]];
+        [_audioManager muteLoop:![msg.val boolValue] name:_localPlayer.displayName];
         
     } else if ([type isEqualToString:@"8"]) {
         
         MPIMessage *msg = [MTLJSONAdapter modelOfClass:[MPIMessage class] fromJSONDictionary:json error:&error];
-        //NSLog(@"Received hearbeat from %@", msg.senderID);
+        
+        // lookup player by peerID
+        MPIPlayer* player = [self playerForPeerID:fromPeerID];
+        if (!player) { return; }
         
         //
-        // TODO: save heartbeat timestamp with peer state
-        // AND: queue up response
-        //
-        
-        if ([_knownPeers objectForKey:fromPeerID]) {
-            // update heartbeat timestamp
-            ((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).lastHeartbeat = [NSDate dateWithTimeIntervalSince1970:[msg.val doubleValue]];
+        // TODO: store this as local time ... or Game Time
+        player.lastHeartbeatSentFromPeerAt = [NSDate dateWithTimeIntervalSince1970:[msg.val doubleValue]];
+        player.lastHeartbeatReceivedFromPeerAt = [NSDate new];
             
-            if (((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state == MPIPeerStateSyncingTime) {
-                // on receipt of first heartbeat ... we know the time sync is complete
-                // notify that peer state is connected and ready to engage
-                [_sessionController.delegate peer:fromPeerID didChangeState:MPIPeerStateConnected];
-                
-            } else if (((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state != MPIPeerStateConnected) {
-                MPIWarn(@"Heartbeat received from non-connected peer %@ in state %ld", fromPeerID, ((PeerInfo*)[_knownPeers objectForKey:fromPeerID]).state);
-            }
+        if (player.state == MPIPeerStateSyncingTime) {
+            // on receipt of first heartbeat ... we know the time sync is complete
+            // notify that peer state is connected and ready to engage
+            [_sessionController.delegate peer:fromPeerID didChangeState:MPIPeerStateConnected];
             
+        } else if (player.state != MPIPeerStateConnected) {
+            MPIWarn(@"Heartbeat received from non-connected peer %@ in state %d", fromPeerID, player.state);
             
-            // only manually trigger change notice here...
-            [self notifyPlayersChange];
+            //
+            // TODO: reset session??
+            // not yet... first try to self-heal connection by resetting the peer
+            // who is able to send but is not receiving...
+            //
         }
+        
+        
+        // only manually trigger change notice here...
+        [self notifyPlayersChange];
     }
 }
 
@@ -498,7 +533,7 @@ static int const kHearbeatIntervalSeconds = 2;
     _avSession = nil;
     [[MPIMotionManager instance] stop];
     
-    [_knownPeers removeAllObjects];
+    [_knownPlayers removeAllObjects];
 }
 
 - (void) resetLocalSession
@@ -509,7 +544,7 @@ static int const kHearbeatIntervalSeconds = 2;
     // TEST: ... first try creating a new session controller
     //
     
-    _sessionController = [[MPISessionController alloc] init];
+    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer];
     self.sessionController.delegate = self;
     
     [_sessionController startup];
@@ -521,20 +556,20 @@ static int const kHearbeatIntervalSeconds = 2;
 {
     double timestamp = [[NSDate date] timeIntervalSince1970];
     // NOTE: sending to each individually ... to enable better understanding of connection status via send msg error
-    NSEnumerator *enumerator = [_knownPeers objectEnumerator];
-    PeerInfo* info;
-    while ((info = [enumerator nextObject])) {
+    NSEnumerator *enumerator = [_knownPlayers objectEnumerator];
+    MPIPlayer* player;
+    while ((player = [enumerator nextObject])) {
         // send heartbeat to connected peers
         // TODO: ... or always try all??
         
-        if (info.state != MPIPeerStateStale) {
-            BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:info.peerID asReliable:NO];
+        if (player.state != MPIPeerStateStale) {
+            BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:player.peerID asReliable:NO];
             if (!success) {
                 // mark disconnected if hearbeat fails
-                [_sessionController.delegate peer:info.peerID didChangeState:MPIPeerStateDisconnected];
-            } else if (info.state != MPIPeerStateConnected) {
+                [_sessionController.delegate peer:player.peerID didChangeState:MPIPeerStateDisconnected];
+            } else if (player.state != MPIPeerStateConnected) {
                 // transition connected if not already
-                [_sessionController.delegate peer:info.peerID didChangeState:MPIPeerStateConnected];
+                [_sessionController.delegate peer:player.peerID didChangeState:MPIPeerStateConnected];
             }
         }
     }

@@ -10,29 +10,29 @@
 #import "SessionController.h"
 #import "MPISongInfoMessage.h"
 #import "MPIMotionManager.h"
+#import "Player.h"
 
-@interface PeerInfo : NSObject
-    @property (readwrite) MCPeerID* peerID;
-    @property (readwrite) MPIPeerState state;
-    @property (readwrite) NSDate* lastHeartbeat;
-@end
 
 @interface MPIGameManager : NSObject<MPISessionControllerDelegate, MPIMotionManagerDelegate>
 
 + (MPIGameManager*)instance;
 
+// player for this device
+@property (readonly) MPIPlayer* localPlayer;
+
+// currently active session controller for this device
 @property (strong, nonatomic) MPISessionController *sessionController;
 
 // the time offset from 'server' or reference player acting as 'time server'
 @property (nonatomic) double timeDeltaSeconds;
 
-// initiates simple algorithm to calculate system time delta with specified player
-- (void)calculateTimeDeltaFrom:(id)playerID;
+// initiates simple algorithm to calculate system time delta with specified peer
+- (void)calculateTimeDeltaFromPeer:(id)nearbyPeerID;
 // returns the system time plus delta based on time sync process
 - (NSDate*)currentTime;
 
-// contains list of PeerInfo objects for any known peers
-@property (nonatomic, readonly) NSMutableDictionary *knownPeers;
+// contains list of Player objects for any known peers
+@property (nonatomic, readonly) NSMutableDictionary *knownPlayers;
 
 
 @property (readwrite) NSNumber* volume;
@@ -47,7 +47,7 @@
 
 // handles time sync process
 // @return NO if timesync should continue, YES if it is complete
-- (BOOL)recievedTimestamp:(id)playerID value:(NSNumber*)val;
+- (BOOL)recievedTimestampFromPeer:(id)nearbyPeerID value:(NSNumber *)val;
 
 - (void)handleActionRequest:(NSDictionary*)json type:(NSString*)type fromPeer:(id)fromPeerID;
 

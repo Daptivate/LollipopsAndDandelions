@@ -8,6 +8,7 @@
 
 #import <MultipeerConnectivity/MultipeerConnectivity.h>
 
+
 // Custom Peer connection states
 typedef NS_ENUM(NSInteger, MPIPeerState) {
     MPIPeerStateDiscovered,         // the peer has been discovered but is not yet connected
@@ -31,6 +32,8 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
     MPILocalSessionStateConnected
 };
 
+// TEMP remove after refactoring Player class dependency on SessionController
+@class MPIPlayer;
 
 @protocol MPISessionControllerDelegate;
 
@@ -46,12 +49,14 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
  */
 @interface MPISessionController : NSObject <MCSessionDelegate, MCNearbyServiceBrowserDelegate, MCNearbyServiceAdvertiserDelegate>
 
+
+- (instancetype)initForPlayer:(MPIPlayer*)player;
+
 @property (nonatomic, weak) id<MPISessionControllerDelegate> delegate;
 
-//
-// TODO : refactor these state variables out of SessionController to separate concerns
-//
-@property (nonatomic, readonly) NSString *displayName;
+// player for this device and session controller
+// displayName and peerID are initialized in initForPlayer
+@property (nonatomic, readonly) MPIPlayer* localPlayer;
 
 
 // creates and returns stream for peer via current session
@@ -107,7 +112,7 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 - (void)session:(MPISessionController *)session didReceiveAudioFileStream:(NSInputStream *)stream;
 
 // recieved audio file
-- (void)session:(MPISessionController *)session didReceiveAudioFileFrom:(NSString*)playerName atPath:(NSString*)filePath;
+- (void)session:(MPISessionController *)session didReceiveAudioFileFrom:(MCPeerID*)peerID atPath:(NSString*)filePath;
 
 @end
 

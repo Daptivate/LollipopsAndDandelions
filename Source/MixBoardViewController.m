@@ -52,7 +52,7 @@
     [self configureAudio];
     
     // set name
-    _nameLabel.text = [MPIGameManager instance].sessionController.displayName;
+    _nameLabel.text = [MPIGameManager instance].localPlayer.displayName;
     
     // timer for updating clock
     [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(timerTick:) userInfo:nil repeats:YES];
@@ -161,7 +161,7 @@
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     // Return the number of rows in the section.
-    return [MPIGameManager instance].knownPeers.count;
+    return [MPIGameManager instance].knownPlayers.count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -169,65 +169,66 @@
     static NSString *CellIdentifier = @"PlayerCell";
     MPIMixBoardTableCell *cell = [tableView dequeueReusableCellWithIdentifier:CellIdentifier forIndexPath:indexPath];
     
-    NSEnumerator *peerEnumerator = [[MPIGameManager instance].knownPeers objectEnumerator];
-    PeerInfo* info;
+    NSEnumerator *peerEnumerator = [[MPIGameManager instance].knownPlayers objectEnumerator];
+    MPIPlayer* player;
     int index = 0;
-    while ((info = [peerEnumerator nextObject])) {
+    while ((player = [peerEnumerator nextObject])) {
         // break when we find the right item based on index
         if (indexPath.row == index) { break; }
         index++;
     }
-    if (info)
-    {
-        cell.playerID = info.peerID;
-        cell.nameLabel.text = info.peerID.displayName;
-        
-        NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-        dateFormatter.dateFormat = @"hh:mm:ss.SSS";
-        cell.lastHeartbeatTimeLabel.text = [dateFormatter stringFromDate:info.lastHeartbeat];
-        
-        // disable unless connected
-        [cell.soundSlider setEnabled:NO];
-        [cell.colorSlider setEnabled:NO];
-        [cell.flashSwitch setEnabled:NO];
-        [cell.recordButton setEnabled:NO];
-        [cell.playThereButton setEnabled:NO];
-        
-        NSString* stateText;
-        switch(info.state) {
-            case MPIPeerStateDiscovered:
-                stateText = @"Discovered";
-                break;
-            case MPIPeerStateInvited:
-                stateText = @"Invited";
-                break;
-            case MPIPeerStateInviteAccepted:
-                stateText = @"Invite Accepted";
-                break;
-            case MPIPeerStateInviteDeclined:
-                stateText = @"Invite Declined";
-                break;
-            case MPIPeerStateSyncingTime:
-                stateText = @"Syncing Time";
-                break;
-            case MPIPeerStateConnected:
-                stateText = @"Connected";
-                [cell.soundSlider setEnabled:YES];
-                [cell.colorSlider setEnabled:YES];
-                [cell.flashSwitch setEnabled:YES];
-                [cell.recordButton setEnabled:YES];
-                [cell.playThereButton setEnabled:YES];
-                break;
-            case MPIPeerStateStale:
-                stateText = @"Offline";
-                break;
-            case MPIPeerStateDisconnected:
-                stateText = @"Disconnected";
-                break;
-        }
-        cell.peerStateLabel.text = stateText;
-        
+    if (!player) {
+        MPIError(@"No player for this cell indexPath.row: %lu", (long)indexPath.row);
+        return cell;
     }
+
+    cell.playerID = player.peerID;
+    cell.nameLabel.text = [[NSString alloc] initWithFormat:@"%@ (%@)", player.displayName, player.playerID];
+    
+    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.dateFormat = @"hh:mm:ss.SSS";
+    cell.lastHeartbeatTimeLabel.text = [dateFormatter stringFromDate:player.lastHeartbeatReceivedFromPeerAt];
+    
+    // disable unless connected
+    [cell.soundSlider setEnabled:NO];
+    [cell.colorSlider setEnabled:NO];
+    [cell.flashSwitch setEnabled:NO];
+    [cell.recordButton setEnabled:NO];
+    [cell.playThereButton setEnabled:NO];
+    
+    NSString* stateText;
+    switch(player.state) {
+        case MPIPeerStateDiscovered:
+            stateText = @"Discovered";
+            break;
+        case MPIPeerStateInvited:
+            stateText = @"Invited";
+            break;
+        case MPIPeerStateInviteAccepted:
+            stateText = @"Invite Accepted";
+            break;
+        case MPIPeerStateInviteDeclined:
+            stateText = @"Invite Declined";
+            break;
+        case MPIPeerStateSyncingTime:
+            stateText = @"Syncing Time";
+            break;
+        case MPIPeerStateConnected:
+            stateText = @"Connected";
+            [cell.soundSlider setEnabled:YES];
+            [cell.colorSlider setEnabled:YES];
+            [cell.flashSwitch setEnabled:YES];
+            [cell.recordButton setEnabled:YES];
+            [cell.playThereButton setEnabled:YES];
+            break;
+        case MPIPeerStateStale:
+            stateText = @"Offline";
+            break;
+        case MPIPeerStateDisconnected:
+            stateText = @"Disconnected";
+            break;
+    }
+    cell.peerStateLabel.text = stateText;
     
     return cell;
 }

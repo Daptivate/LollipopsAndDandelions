@@ -7,32 +7,17 @@
 //
 
 #import "Player.h"
-#import "MTLValueTransformer.h"
 
 @implementation MPIPlayer
 
-+ (NSDateFormatter *)dateFormatter {
-    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-    dateFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-    dateFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-    return dateFormatter;
-}
-
-+ (NSDictionary *)JSONKeyPathsByPropertyKey {
-    return @{
-             @"uuid": @"uuid",
-             @"name": @"name",
-             @"phone": @"phone",
-             @"lastActive": @"last_active"
-             };
-}
-
-+ (NSValueTransformer *)lastActiveJSONTransformer {
-    return [MTLValueTransformer reversibleTransformerWithForwardBlock:^(NSString *str) {
-        return [self.dateFormatter dateFromString:str];
-    } reverseBlock:^(NSDate *date) {
-        return [self.dateFormatter stringFromDate:date];
-    }];
+- (id)init {
+    
+    self = [super init];
+    if (self) {
+        // create unique id on construction
+        _playerID = [[NSUUID UUID] UUIDString];
+    }
+    return self;
 }
 
 @end
