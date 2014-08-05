@@ -600,6 +600,7 @@ static int const kDiconnectedSessionResetTimeout = 10;
     // cancel reset timer
     if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
     
+    MPILocalSessionState oldSessionState = _sessionController.localSessionState;
     MPISessionController *oldSessionController = _sessionController;
     [oldSessionController stopAdvertising];
     [oldSessionController stopBrowsing];
@@ -609,7 +610,14 @@ static int const kDiconnectedSessionResetTimeout = 10;
     // TEST: ... first try creating a new session controller
     //
     
-    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer];
+    
+    //
+    // TODO: reset in current state ... without advertise delay
+    // i.e. - if currently browsing ... start in browsing state
+    // if currently advertising ... start in advertising state with delay
+    //
+    
+    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer withState:MPILocalSessionStateAdvertising];
     self.sessionController.delegate = self;
     
     // clear out previous session and known players

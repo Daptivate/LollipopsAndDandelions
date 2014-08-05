@@ -52,6 +52,10 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 
 - (instancetype)initForPlayer:(MPIPlayer*)player;
 
+- (instancetype)initForPlayer:(MPIPlayer*)player withState:(MPILocalSessionState)state;
+
+@property (readwrite) MPILocalSessionState localSessionState;  // track state of managed MCSession
+
 @property (nonatomic, weak) id<MPISessionControllerDelegate> delegate;
 
 // player for this device and session controller

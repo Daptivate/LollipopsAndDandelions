@@ -15,7 +15,6 @@
 
 @interface MPISessionController () // Class extension
 
-@property (readwrite) MPILocalSessionState mySessionState;  // track state of managed MCSession
 @property (readwrite) MPIPeerState myPeerState;             // track state of local peer
 
 @property (nonatomic, strong) MCSession *session;
@@ -36,11 +35,22 @@ static NSString * const kLogDefaultTag = @"SessionController";
 static NSString * const kLocalPeerIDKey = @"mpi-local-peerid";
 static NSString * const kMCSessionServiceType = @"mpi-shared";
 
-static double const kInitialAdvertiseSeconds = 7.0f;
+static double const kInitialAdvertiseSeconds = 5.0f;
 
 #pragma mark - Initializer
 
 - (instancetype)initForPlayer:(MPIPlayer*)player
+{
+    self = [super init];
+    
+    if (self)
+    {
+        self = [self initForPlayer:player withState:MPILocalSessionStateCreated];
+    }
+    return self;
+}
+
+- (instancetype)initForPlayer:(MPIPlayer*)player withState:(MPILocalSessionState)state
 {
     self = [super init];
     
@@ -51,7 +61,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         _localPlayer = player;
         
         // default initial state
-        _mySessionState = MPILocalSessionStateNotCreated;
+        _localSessionState = state;
         
         
         NSString *nameWithUUID = [[NSString alloc] initWithFormat:@"%@ <%@>", player.displayName, [[NSUUID UUID] UUIDString]];
@@ -59,6 +69,14 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         
         
         _invitations = [[NSMutableDictionary alloc] init];
+        
+        // check for request to start in a specific state
+        switch (state){
+            case MPILocalSessionStateAdvertising:
+            case MPILocalSessionStateBrowsing:
+                [self startupWithState:state];
+                break;
+        }
     }
     
     return self;
@@ -162,7 +180,12 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 
 #pragma mark - Start or Stop session controller
 
+
 - (void)startup
+{
+    [self startupWithState:MPILocalSessionStateCreated];
+}
+- (void)startupWithState:(MPILocalSessionState)state
 {
     // Create the session that peers will be invited/join into.
     _session = [[MCSession alloc] initWithPeer:_localPlayer.peerID];
@@ -170,17 +193,25 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     
     MPIDebug(@"created session for: %@", _localPlayer.displayName);
     
-    // update local state
-    _mySessionState = MPILocalSessionStateCreated;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = state;
     
-
-    // advertise for a bit
-    [self startAdvertising];
-    // then switch to browse if no invite was received after
-    _advertiseTimer = [NSTimer scheduledTimerWithTimeInterval:kInitialAdvertiseSeconds target:self
-                                           selector:@selector(advertiseTimedOut:) userInfo:nil repeats:NO];
-
+    switch(state){
+        case MPILocalSessionStateCreated:
+        case MPILocalSessionStateAdvertising:
+            // advertise for a bit
+            [self startAdvertising];
+            // then switch to browse if no invite was received after
+            _advertiseTimer = [NSTimer scheduledTimerWithTimeInterval:kInitialAdvertiseSeconds target:self
+                                                             selector:@selector(advertiseTimedOut:) userInfo:nil repeats:NO];
+            break;
+            
+        case MPILocalSessionStateBrowsing:
+            [self startBrowsing];
+            break;
+    }
+    
+    
+    [self.delegate session:self didChangeState:_localSessionState];
     
 }
 
@@ -204,8 +235,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     _serviceAdvertiser = nil;
     
     // update local state
-    _mySessionState = MPILocalSessionStateNotCreated;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateNotCreated;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - Control advertising and browsing
@@ -226,8 +257,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIDebug(@"startAdvertising");
     [self.serviceAdvertiser startAdvertisingPeer];
     
-    _mySessionState = MPILocalSessionStateAdvertising;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)stopAdvertising
 {
@@ -235,8 +266,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     if (_serviceAdvertiser != nil) { [self.serviceAdvertiser stopAdvertisingPeer]; }
     
     // TODO: double check appropriate next state on advertise stop
-    _mySessionState = MPILocalSessionStateNotAdvertising;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)startBrowsing
 {
@@ -252,8 +283,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIDebug(@"startBrowsing");
     [self.serviceBrowser startBrowsingForPeers];
     
-    _mySessionState = MPILocalSessionStateBrowsing;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)stopBrowsing
 {
@@ -261,8 +292,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     if (_serviceBrowser != nil) { [self.serviceBrowser stopBrowsingForPeers]; }
     
     // TODO: double check appropriate next state on browsing stop
-    _mySessionState = MPILocalSessionStateNotBrowsing;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - MCSessionDelegate protocol conformance
@@ -307,10 +338,12 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             }
             
             // check if local session state should change to created
+            /* NOT CHANGING TO CONNECTED ... SO THAT WE PERSIST THE ADVERTISE vs. BROWSING state
             if (self.session.connectedPeers.count > 0) {
-                _mySessionState = MPILocalSessionStateConnected;
-                [self.delegate session:self didChangeState:_mySessionState];
+                _localSessionState = MPILocalSessionStateConnected;
+                [self.delegate session:self didChangeState:_localSessionState];
             }
+             */
             break;
         }
             
@@ -321,8 +354,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             
             // check if local session state should fall back to created
             if (self.session.connectedPeers.count <= 0) {
-                //_mySessionState = MPILocalSessionStateCreated;
-                //[self.delegate session:self didChangeState:_mySessionState];
+                //_localSessionState = MPILocalSessionStateCreated;
+                //[self.delegate session:self didChangeState:_localSessionState];
                 
                 //
                 //TEST: let GameManager handle this detection
@@ -510,7 +543,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     //
     // TODO: are there other condition under which invitation should not be sent??
     //
-    if (self.session != nil && _mySessionState != MPILocalSessionStateNotCreated) {
+    if (self.session != nil && _localSessionState != MPILocalSessionStateNotCreated) {
         MPIDebug(@"Inviting %@", remotePeerName);
         
         // save invitation start for this peer
@@ -547,8 +580,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     MPIDebug(@"didNotStartBrowsingForPeers: %@", error);
     
-    _mySessionState = MPILocalSessionStateNotBrowsing;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - MCNearbyServiceAdvertiserDelegate protocol conformance
@@ -569,6 +602,11 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     // This is to prevent multiple networks from being created.
     //
     
+    if (!self.session) {
+        MPIError(@"SESSION is NULL for receipt of invitation from %@.  Me: %@", peerID.displayName, _localPlayer.peerID.displayName);
+        return;
+    }
+    
     if (self.session.connectedPeers.count == 0) {
         invitationHandler(YES, self.session);
         // update peer state
@@ -586,8 +624,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     MPIWarn(@"didNotStartAdvertisingForPeers: %@", error);
     
-    _mySessionState = MPILocalSessionStateNotAdvertising;
-    [self.delegate session:self didChangeState:_mySessionState];
+    _localSessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 //
