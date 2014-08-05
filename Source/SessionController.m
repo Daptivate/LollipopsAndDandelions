@@ -49,8 +49,13 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         _mySessionState = MPILocalSessionStateNotCreated;
         
         // capture function name for event logging
-        NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
+        //NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
         
+        
+        NSString *nameWithUUID = [[NSString alloc] initWithFormat:@"%@ (%@)",[[UIDevice currentDevice] name], [[NSUUID UUID] UUIDString]];
+        _peerID = [[MCPeerID alloc] initWithDisplayName:nameWithUUID];
+        
+        /*
         // check if this device has a saved peer ID
         NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
         NSData *peerIDData = [userDefaults dataForKey:kLocalPeerIDKey];
@@ -71,6 +76,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             
             [[MPIEventLogger sharedInstance] log:source description:@"retrieved existing peerID"];
         }
+         */
         
         
         _invitations = [[NSMutableDictionary alloc] init];
@@ -550,7 +556,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIDebug(@"lostPeer %@. session.connectedPeers: %@", peerID.displayName, [self printSessionConnectedPeers]);
     
     // update peer connection state
-    [self.delegate peer:peerID didChangeState:MPIPeerStateDisconnected];
+    [self.delegate peer:peerID didChangeState:MPIPeerStateStale];
 }
 
 - (void)browser:(MCNearbyServiceBrowser *)browser didNotStartBrowsingForPeers:(NSError *)error

@@ -219,7 +219,7 @@
                 [cell.playThereButton setEnabled:YES];
                 break;
             case MPIPeerStateStale:
-                stateText = @"Stale";
+                stateText = @"Offline";
                 break;
             case MPIPeerStateDisconnected:
                 stateText = @"Disconnected";

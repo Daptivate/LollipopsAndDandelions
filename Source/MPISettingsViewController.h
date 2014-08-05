@@ -17,4 +17,5 @@
 - (IBAction)browseChanged:(id)sender;
 
 - (IBAction)donePressed:(id)sender;
+- (IBAction)resetPeerID:(id)sender;
 @end

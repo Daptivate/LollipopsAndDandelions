@@ -75,5 +75,7 @@
 - (void)startup;
 - (void)shutdown;
 
+- (void)resetLocalSession;
+
 - (void)startHeartbeatWithPeer:(id)peerID;
 @end

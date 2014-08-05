@@ -501,6 +501,21 @@ static int const kHearbeatIntervalSeconds = 2;
     [_knownPeers removeAllObjects];
 }
 
+- (void) resetLocalSession
+{
+    //MPISessionController *oldSessionController = _sessionController;
+    
+    //
+    // TEST: ... first try creating a new session controller
+    //
+    
+    _sessionController = [[MPISessionController alloc] init];
+    self.sessionController.delegate = self;
+    
+    [_sessionController startup];
+}
+
+
 // every kHeartbeatIntervalSeconds ... to all peers
 - (void) broadcastHeartbeat:(NSTimer *)incomingTimer
 {
@@ -511,7 +526,8 @@ static int const kHearbeatIntervalSeconds = 2;
     while ((info = [enumerator nextObject])) {
         // send heartbeat to connected peers
         // TODO: ... or always try all??
-        if (info.state != MPIPeerStateDisconnected) {
+        
+        if (info.state != MPIPeerStateStale) {
             BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:info.peerID asReliable:NO];
             if (!success) {
                 // mark disconnected if hearbeat fails

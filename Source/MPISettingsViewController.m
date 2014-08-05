@@ -107,6 +107,10 @@
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
+- (IBAction)resetPeerID:(id)sender {
+    [[MPIGameManager instance] resetLocalSession];
+}
+
 
 
 @end
