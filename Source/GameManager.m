@@ -27,6 +27,7 @@ static int const kTimeSyncIterations = 10;
 static int const kHearbeatIntervalSeconds = 2;
 static int const kDiconnectedSessionResetTimeout = 10;
 
+static BOOL const kEnableNodeVizApi = YES;
 static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuapp.com";
 
 @implementation MPIGameManager
@@ -240,7 +241,7 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
 
 - (void)peer:(MCPeerID *)nearbyPeerID didChangeState:(MPIPeerState)state
 {
-    MPIDebug(@"Peer (%@) changed state: %d", nearbyPeerID.displayName, state);
+    MPIDebug(@"Peer (%@) changed state: %ld", nearbyPeerID.displayName, state);
     
     // lookup player for peer ... ignore not found error/logging
     MPIPlayer* player = [self playerForPeerID:nearbyPeerID logError:NO];
@@ -256,6 +257,9 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     } else {
         // update state
         player.state = state;
+        
+        // TEST: always send update to API on state change
+        [self sendPlayerToApi:player isNew:NO];
     }
     
     if (state == MPIPeerStateDisconnected &&                // if state transitioned to disconnected
@@ -614,6 +618,11 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     [_knownPlayers removeAllObjects];
     
     //
+    // TODO: send remove to API
+    //
+    
+    
+    //
     // TEST: ... first try creating a new session controller
     //
     
@@ -632,6 +641,9 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     //oldSessionController = nil;
     
     [_sessionController startup];
+    
+    // send player update to API
+    [self sendPlayerToApi:_localPlayer isNew:NO];
 }
 
 
@@ -659,6 +671,9 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
             //always update last sent date on success
             if (success) { player.lastHeartbeatSentToPeerAt = [NSDate new]; }
         }
+        
+        // TEST: always send update to API on heartbeat attempt
+        [self sendPlayerToApi:player isNew:NO];
     }
 }
 
@@ -679,6 +694,8 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
 
 - (void)postSessionInfoToApi
 {
+    if (!kEnableNodeVizApi) { return; }
+    
     NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
     
     NSURL* url = [NSURL URLWithString:[baseURL stringByAppendingPathComponent:@"sessions"]]; //create url
@@ -694,6 +711,8 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
 
 - (void)sendPlayerToApi:(MPIPlayer*)newPlayer isNew:(BOOL)isNew
 {
+    if (!kEnableNodeVizApi) { return; }
+    
     // first post new node for player
     NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
     
@@ -721,6 +740,8 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
 
 - (void)postNewLinkToApi:(MPIPlayer*)newPlayer
 {
+    if (!kEnableNodeVizApi) { return; }
+    
     // first post new node for player
     [self sendPlayerToApi:newPlayer isNew:YES];
     
