@@ -11,6 +11,7 @@
 #import "AudioManager.h"
 #import "ActionMessage.h"
 #import "MPIEventLogger.h"
+#import "RestUtil.h"
 #import <AVFoundation/AVFoundation.h>
 
 @interface MPIGameManager()
@@ -26,6 +27,8 @@ static int const kTimeSyncIterations = 10;
 static int const kHearbeatIntervalSeconds = 2;
 static int const kDiconnectedSessionResetTimeout = 10;
 
+static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuapp.com";
+
 @implementation MPIGameManager
 
 - (id)init {
@@ -37,6 +40,8 @@ static int const kDiconnectedSessionResetTimeout = 10;
         _localPlayer.displayName = [[UIDevice currentDevice] name];
         // initial configuration
         [self configure];
+        [self postSessionInfoToApi];
+        [self sendPlayerToApi:_localPlayer isNew:YES];
     }
     return self;
 }
@@ -203,7 +208,7 @@ static int const kDiconnectedSessionResetTimeout = 10;
 
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state
 {
-    MPIDebug(@"LocalSession changed state: %d", state);
+    MPIDebug(@"LocalSession changed state: %ld", state);
     switch(state){
         case MPILocalSessionStateNotCreated:
             _localSessionStateText = @"Not Created";
@@ -246,6 +251,8 @@ static int const kDiconnectedSessionResetTimeout = 10;
         newPlayer.peerID = nearbyPeerID;
         newPlayer.state = state;
         [_knownPlayers setObject:newPlayer forKey:newPlayer.playerID];
+        
+        [self postNewLinkToApi:newPlayer];
     } else {
         // update state
         player.state = state;
@@ -667,5 +674,69 @@ static int const kDiconnectedSessionResetTimeout = 10;
     //
     
 }
+
+#pragma mark - helpers for REST API
+
+- (void)postSessionInfoToApi
+{
+    NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
+    
+    NSURL* url = [NSURL URLWithString:[baseURL stringByAppendingPathComponent:@"sessions"]]; //create url
+    
+    NSMutableDictionary* sessionInfo = [[NSMutableDictionary alloc] init];
+    [sessionInfo setValue:_localPlayer.playerID forKey:@"session_id"];
+    [sessionInfo setValue:_localPlayer.displayName forKey:@"display_name"];
+    
+    [[RestUtil sharedInstance] post:sessionInfo toUrl:url responseHandler:^(NSData* data) {
+        MPIDebug(@"Resonpse from session post: %@", data);
+    }];
+}
+
+- (void)sendPlayerToApi:(MPIPlayer*)newPlayer isNew:(BOOL)isNew
+{
+    // first post new node for player
+    NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
+    
+    NSURL* url = [NSURL URLWithString:[baseURL stringByAppendingPathComponent:@"nodes"]]; //create url
+    
+    NSDictionary* playerJson = [MTLJSONAdapter JSONDictionaryFromModel:newPlayer];
+    
+    if (!isNew) {
+        [[RestUtil sharedInstance] put:playerJson toUrl:url];
+    } else {
+        [[RestUtil sharedInstance] post:playerJson toUrl:url responseHandler:^(NSData* data) {
+            
+            id obj = (NSDictionary*)data;
+            NSError* error;
+            MPIPlayer *pResponse = [MTLJSONAdapter modelOfClass:[MPIPlayer class] fromJSONDictionary:obj error:&error];
+            if (error != nil) {
+                MPIError(@"Error deserializing player response: %@", error);
+                return;
+            }
+            MPIDebug(@"Response from player post: %@", [MTLJSONAdapter JSONDictionaryFromModel:pResponse]);
+            
+        }];
+    }
+}
+
+- (void)postNewLinkToApi:(MPIPlayer*)newPlayer
+{
+    // first post new node for player
+    [self sendPlayerToApi:newPlayer isNew:YES];
+    
+    // then, post link info between local player and new player
+    NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
+    NSURL* url = [NSURL URLWithString:[baseURL stringByAppendingPathComponent:@"links"]]; //create url
+    
+    NSMutableDictionary* linkInfo = [[NSMutableDictionary alloc] init];
+    [linkInfo setValue:_localPlayer.playerID forKey:@"from_node_id"];
+    [linkInfo setValue:newPlayer.playerID forKey:@"to_node_id"];
+    [linkInfo setValue:[MPIPlayer peerStateToString:newPlayer.state] forKey:@"state"];
+    
+    [[RestUtil sharedInstance] post:linkInfo toUrl:url responseHandler:^(NSData* data) {
+        MPIDebug(@"Resonpse from link post: %@", data);
+    }];
+}
+
 
 @end

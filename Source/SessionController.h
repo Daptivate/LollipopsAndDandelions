@@ -7,19 +7,7 @@
 //
 
 #import <MultipeerConnectivity/MultipeerConnectivity.h>
-
-
-// Custom Peer connection states
-typedef NS_ENUM(NSInteger, MPIPeerState) {
-    MPIPeerStateDiscovered,         // the peer has been discovered but is not yet connected
-    MPIPeerStateInvited,            // the invitation was sent
-    MPIPeerStateInviteAccepted,     // the invitation was accepted
-    MPIPeerStateInviteDeclined,     // the invitation was declined
-    MPIPeerStateSyncingTime,        // the time sync process is in progress
-    MPIPeerStateConnected,          // connected to the session
-    MPIPeerStateStale,              // when a heartbeat is missed, state will change to Stale
-    MPIPeerStateDisconnected        // previously connected peer is no longer connected
-};
+#import "Player.h"
 
 // Custom states for the controller to abstract local MCSession behavior
 typedef NS_ENUM(NSInteger, MPILocalSessionState) {
@@ -31,9 +19,6 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
     MPILocalSessionStateNotBrowsing,
     MPILocalSessionStateConnected
 };
-
-// TEMP remove after refactoring Player class dependency on SessionController
-@class MPIPlayer;
 
 @protocol MPISessionControllerDelegate;
 
