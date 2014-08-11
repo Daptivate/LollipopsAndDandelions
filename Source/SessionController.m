@@ -35,7 +35,7 @@ static NSString * const kLogDefaultTag = @"SessionController";
 static NSString * const kLocalPeerIDKey = @"mpi-local-peerid";
 static NSString * const kMCSessionServiceType = @"mpi-shared";
 
-static double const kInitialAdvertiseSeconds = 5.0f;
+static double const kInitialAdvertiseSeconds = 7.0f;
 
 #pragma mark - Initializer
 
@@ -69,14 +69,6 @@ static double const kInitialAdvertiseSeconds = 5.0f;
         
         
         _invitations = [[NSMutableDictionary alloc] init];
-        
-        // check for request to start in a specific state
-        switch (state){
-            case MPILocalSessionStateAdvertising:
-            case MPILocalSessionStateBrowsing:
-                [self startupWithState:state];
-                break;
-        }
     }
     
     return self;
@@ -183,7 +175,7 @@ static double const kInitialAdvertiseSeconds = 5.0f;
 
 - (void)startup
 {
-    [self startupWithState:MPILocalSessionStateCreated];
+    [self startupWithState:_localSessionState];
 }
 - (void)startupWithState:(MPILocalSessionState)state
 {
@@ -208,10 +200,12 @@ static double const kInitialAdvertiseSeconds = 5.0f;
         case MPILocalSessionStateBrowsing:
             [self startBrowsing];
             break;
+        default:
+            [self.delegate session:self didChangeState:_localSessionState];
     }
     
-    
-    [self.delegate session:self didChangeState:_localSessionState];
+    // state change notice is setn in startAdvertising ... and startBrowsing
+    //[self.delegate session:self didChangeState:_localSessionState];
     
 }
 

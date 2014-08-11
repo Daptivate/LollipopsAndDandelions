@@ -28,7 +28,7 @@ static int const kHearbeatIntervalSeconds = 2;
 static int const kDiconnectedSessionResetTimeout = 10;
 
 static BOOL const kEnableNodeVizApi = YES;
-static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuapp.com";
+static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost:3000";
 
 @implementation MPIGameManager
 
@@ -209,6 +209,13 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
 
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state
 {
+    // verify the change occured on active session
+    if (session.localPlayer.peerID != _localPlayer.peerID ) {
+        MPIDebug(@"IGNORING session state change %lu non-current session", state);
+        return;
+    }
+    
+        
     MPIDebug(@"LocalSession changed state: %ld", state);
     switch(state){
         case MPILocalSessionStateNotCreated:
@@ -633,13 +640,14 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     // if currently advertising ... start in advertising state with delay
     //
     
-    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer withState:MPILocalSessionStateAdvertising];
+    _sessionController = [[MPISessionController alloc] initForPlayer:_localPlayer withState:oldSessionState];
     self.sessionController.delegate = self;
     
     // clear out previous session and known players
     //[oldSessionController shutdown];
     //oldSessionController = nil;
     
+    // after setting delegate ... ready to startup in pre-defined state
     [_sessionController startup];
     
     // send player update to API
@@ -658,7 +666,11 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
         // send heartbeat to connected peers
         // TODO: ... or always try all??
         
-        if (player.state != MPIPeerStateStale) {
+        // ONLY send heartbeat if Connected (time sync complete) or Stale (possible temporary loss)
+        if (player.state == MPIPeerStateConnected ||
+            player.state == MPIPeerStateInvited ||
+            player.state == MPIPeerStateStale) {
+        //if (player.state != MPIPeerStateStale) {
             BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:player.peerID asReliable:NO];
             if (!success) {
                 // mark disconnected if hearbeat fails
@@ -670,10 +682,15 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
             
             //always update last sent date on success
             if (success) { player.lastHeartbeatSentToPeerAt = [NSDate new]; }
+            
+            
+            // TEST: always send update to API on heartbeat attempt
+            [self sendPlayerToApi:player isNew:NO];
+            
+        } else {
+            MPIDebug(@"NOT sending hearbeat when player state is %ld", player.state);
         }
         
-        // TEST: always send update to API on heartbeat attempt
-        [self sendPlayerToApi:player isNew:NO];
     }
 }
 
@@ -721,10 +738,12 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     NSDictionary* playerJson = [MTLJSONAdapter JSONDictionaryFromModel:newPlayer];
     
     if (!isNew) {
-        // create put url
-        url = [url URLByAppendingPathComponent:newPlayer.mongoID];
-        // send put/update request
-        [[RestUtil sharedInstance] put:playerJson toUrl:url];
+        if (newPlayer.mongoID != nil) { // wait for rest api response to assign id ... and process updates
+            // create put url
+            url = [url URLByAppendingPathComponent:newPlayer.mongoID];
+            // send put/update request
+            [[RestUtil sharedInstance] put:playerJson toUrl:url];
+        }
     } else {
         [[RestUtil sharedInstance] post:playerJson toUrl:url responseHandler:^(NSDictionary* dataJson) {
             
