@@ -13,7 +13,7 @@
 
 +(RestUtil*)sharedInstance;
 
-- (void)post:(NSDictionary*)jsonData toUrl:(NSURL*)apiUrl responseHandler:(void (^)(NSData* data))responseHandler;
+- (void)post:(NSDictionary*)jsonData toUrl:(NSURL*)apiUrl responseHandler:(void (^)(NSDictionary* dataJson))responseHandler;
 
 - (void)put:(NSDictionary*)jsonData toUrl:(NSURL*)apiUrl;
 

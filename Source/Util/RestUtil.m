@@ -58,11 +58,20 @@ completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *erro
     [dataTask resume];
 }
 
-- (void)post:(NSDictionary*)jsonData toUrl:(NSURL*)apiUrl responseHandler:(void (^)(NSData* data))responseHandler {
+- (void)post:(NSDictionary*)jsonData toUrl:(NSURL*)apiUrl responseHandler:(void (^)(NSDictionary* dataJson))responseHandler {
     [self send:jsonData toUrl:apiUrl withMethod:@"POST" completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (!error) {
-            // on success ... send data back to handler
-            responseHandler(data);
+            //MPIDebug(@"dataAsString %@", [NSString stringWithUTF8String:[data bytes]]);
+            
+            NSError *jsonError;
+            NSDictionary *dataJson  = [NSJSONSerialization JSONObjectWithData:data options:kNilOptions error:&jsonError];
+            if (jsonError != nil) {
+                MPIError(@"Error deserializing http response into JSON dictionary: %@", jsonError);
+                return;
+            }
+            
+            // on success ... send json dictionary back to handler
+            responseHandler(dataJson);
         } else {
             MPIError(@"Error posting to API. %@", error);
         }

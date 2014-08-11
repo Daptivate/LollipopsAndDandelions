@@ -93,6 +93,13 @@
         return [peerID displayName];
     }];
 }
++ (NSValueTransformer *)mongoIDJSONTransformer {
+    return [MTLValueTransformer reversibleTransformerWithForwardBlock:^(NSString *str) {
+        return str;
+    } reverseBlock:^(NSString *val) {
+        return val;
+    }];
+}
 + (NSValueTransformer *)lastHeartbeatSentFromPeerAtJSONTransformer {
     return [MTLValueTransformer reversibleTransformerWithForwardBlock:^(NSString *str) {
         return [self.dateFormatter dateFromString:str];
@@ -117,7 +124,8 @@
 
 + (NSDictionary *)JSONKeyPathsByPropertyKey {
     return @{
-             @"playerID": @"_id",
+             @"mongoID": @"mongoID",
+             @"playerID": @"playerID",
              @"displayName": @"displayName",
              @"peerID": @"peerID",
              @"stateText": @"stateText",

@@ -704,8 +704,8 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     [sessionInfo setValue:_localPlayer.playerID forKey:@"session_id"];
     [sessionInfo setValue:_localPlayer.displayName forKey:@"display_name"];
     
-    [[RestUtil sharedInstance] post:sessionInfo toUrl:url responseHandler:^(NSData* data) {
-        MPIDebug(@"Resonpse from session post: %@", data);
+    [[RestUtil sharedInstance] post:sessionInfo toUrl:url responseHandler:^(NSDictionary* dataJson) {
+        MPIDebug(@"Resonpse from session post: %@", dataJson);
     }];
 }
 
@@ -721,18 +721,23 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     NSDictionary* playerJson = [MTLJSONAdapter JSONDictionaryFromModel:newPlayer];
     
     if (!isNew) {
+        // create put url
+        url = [url URLByAppendingPathComponent:newPlayer.mongoID];
+        // send put/update request
         [[RestUtil sharedInstance] put:playerJson toUrl:url];
     } else {
-        [[RestUtil sharedInstance] post:playerJson toUrl:url responseHandler:^(NSData* data) {
+        [[RestUtil sharedInstance] post:playerJson toUrl:url responseHandler:^(NSDictionary* dataJson) {
             
-            id obj = (NSDictionary*)data;
-            NSError* error;
-            MPIPlayer *pResponse = [MTLJSONAdapter modelOfClass:[MPIPlayer class] fromJSONDictionary:obj error:&error];
-            if (error != nil) {
-                MPIError(@"Error deserializing player response: %@", error);
+            NSError* parseError;
+            MPIPlayer *pResponse = [MTLJSONAdapter modelOfClass:[MPIPlayer class] fromJSONDictionary:dataJson error:&parseError];
+            if (parseError != nil) {
+                MPIError(@"Error deserializing player response: %@", parseError);
                 return;
             }
             MPIDebug(@"Response from player post: %@", [MTLJSONAdapter JSONDictionaryFromModel:pResponse]);
+            
+            // set generated mongo id
+            newPlayer.mongoID = pResponse.mongoID;
             
         }];
     }
@@ -754,8 +759,8 @@ static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuap
     [linkInfo setValue:newPlayer.playerID forKey:@"to_node_id"];
     [linkInfo setValue:[MPIPlayer peerStateToString:newPlayer.state] forKey:@"state"];
     
-    [[RestUtil sharedInstance] post:linkInfo toUrl:url responseHandler:^(NSData* data) {
-        MPIDebug(@"Resonpse from link post: %@", data);
+    [[RestUtil sharedInstance] post:linkInfo toUrl:url responseHandler:^(NSDictionary* dataJson) {
+        MPIDebug(@"Resonpse from link post: %@", dataJson);
     }];
 }
 
