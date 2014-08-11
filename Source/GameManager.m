@@ -27,7 +27,6 @@ static int const kTimeSyncIterations = 10;
 static int const kHearbeatIntervalSeconds = 2;
 static int const kDiconnectedSessionResetTimeout = 10;
 
-static BOOL const kEnableNodeVizApi = YES;
 static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost:3000";
 
 @implementation MPIGameManager
@@ -754,7 +753,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
 
 - (void)postSessionInfoToApi
 {
-    if (!kEnableNodeVizApi) { return; }
+    if (!_enableVizApi) { return; }
     
     NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
     
@@ -771,7 +770,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
 
 - (void)sendPlayerToApi:(MPIPlayer*)newPlayer isNew:(BOOL)isNew
 {
-    if (!kEnableNodeVizApi) { return; }
+    if (!_enableVizApi) { return; }
     
     // first post new node for player
     NSString* baseURL = [[NSString alloc] initWithFormat:@"http://%@/api/v1/", kApiHost];
@@ -807,7 +806,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
 
 - (void)postNewLinkToApi:(MPIPlayer*)newPlayer
 {
-    if (!kEnableNodeVizApi) { return; }
+    if (!_enableVizApi) { return; }
     
     // first post new node for player
     [self sendPlayerToApi:newPlayer isNew:YES];

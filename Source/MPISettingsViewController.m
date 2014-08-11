@@ -33,6 +33,20 @@
     
     // set log level based on current
     [_logLevelPicker selectRow:[MPIEventLogger sharedInstance].logLevel inComponent:0 animated:NO];
+    
+    // set api status based on current
+    if ([MPIEventLogger sharedInstance].logDestination == MPILogDestinationAPI ||
+        [MPIEventLogger sharedInstance].logDestination == MPILogDestinationALL) {
+        [_logApiSwitch setOn:YES];
+    } else {
+        [_logApiSwitch setOn:NO];
+    }
+    // set viz api status based on current
+    if ([MPIGameManager instance].enableVizApi) {
+        [_vizApiSwitch setOn:YES];
+    } else {
+        [_vizApiSwitch setOn:NO];
+    }
 }
 
 - (void)didReceiveMemoryWarning {
@@ -100,6 +114,16 @@
         [[MPIGameManager instance].sessionController startBrowsing];
     } else {
         [[MPIGameManager instance].sessionController stopBrowsing];
+    }
+}
+
+- (IBAction)enableVizApi:(id)sender {
+    
+    UISwitch* apiSwitch = (UISwitch*)sender;
+    if (apiSwitch.isOn) {
+        [MPIGameManager instance].enableVizApi = YES;
+    } else {
+        [MPIGameManager instance].enableVizApi = NO;
     }
 }
 

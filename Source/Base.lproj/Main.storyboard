@@ -228,7 +228,7 @@
                                 <nil key="highlightedColor"/>
                             </label>
                             <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Log Level" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="LaB-r7-nYG">
-                                <rect key="frame" x="20" y="169" width="223" height="21"/>
+                                <rect key="frame" x="20" y="229" width="223" height="21"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                 <color key="textColor" cocoaTouchSystemColor="darkTextColor"/>
                                 <nil key="highlightedColor"/>
@@ -246,7 +246,7 @@
                                 </connections>
                             </switch>
                             <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="2FK-eQ-P6s">
-                                <rect key="frame" x="251" y="58" width="51" height="31"/>
+                                <rect key="frame" x="251" y="58" width="52" height="31"/>
                                 <connections>
                                     <action selector="logToApi:" destination="pe1-NC-1uj" eventType="valueChanged" id="YUD-sy-Hlt"/>
                                 </connections>
@@ -258,7 +258,7 @@
                                 <nil key="highlightedColor"/>
                             </label>
                             <pickerView contentMode="scaleToFill" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="2bi-BB-up0">
-                                <rect key="frame" x="20" y="184" width="280" height="162"/>
+                                <rect key="frame" x="20" y="244" width="280" height="162"/>
                                 <connections>
                                     <outlet property="dataSource" destination="pe1-NC-1uj" id="R1Q-0S-zvU"/>
                                     <outlet property="delegate" destination="pe1-NC-1uj" id="gRr-0i-RXa"/>
@@ -274,7 +274,7 @@
                                 </connections>
                             </button>
                             <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="DeA-dX-BnY">
-                                <rect key="frame" x="115" y="354" width="90" height="30"/>
+                                <rect key="frame" x="115" y="414" width="90" height="30"/>
                                 <state key="normal" title="Reset PeerID">
                                     <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
                                 </state>
@@ -282,11 +282,25 @@
                                     <action selector="resetPeerID:" destination="pe1-NC-1uj" eventType="touchUpInside" id="puf-Zf-iu8"/>
                                 </connections>
                             </button>
+                            <switch opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="4ru-7u-6Az">
+                                <rect key="frame" x="251" y="175" width="51" height="31"/>
+                                <connections>
+                                    <action selector="enableVizApi:" destination="pe1-NC-1uj" eventType="valueChanged" id="ZQm-Zf-68u"/>
+                                </connections>
+                            </switch>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Enable Viz API" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="86G-nN-vHN">
+                                <rect key="frame" x="20" y="180" width="111" height="21"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <color key="textColor" cocoaTouchSystemColor="darkTextColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                     </view>
                     <connections>
+                        <outlet property="logApiSwitch" destination="2FK-eQ-P6s" id="TjZ-MQ-szo"/>
                         <outlet property="logLevelPicker" destination="2bi-BB-up0" id="RDi-W4-UHG"/>
+                        <outlet property="vizApiSwitch" destination="4ru-7u-6Az" id="3kj-SQ-9wC"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="G5O-4p-gXD" userLabel="First Responder" sceneMemberID="firstResponder"/>

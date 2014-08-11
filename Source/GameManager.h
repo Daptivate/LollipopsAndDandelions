@@ -34,7 +34,7 @@
 // contains list of Player objects for any known peers
 @property (nonatomic, readonly) NSMutableDictionary *knownPlayers;
 
-
+@property (readwrite) BOOL enableVizApi;
 @property (readwrite) NSNumber* volume;
 @property (readwrite) NSNumber* color;
 @property (readwrite) MPISongInfoMessage *lastSongMessage;
