@@ -108,6 +108,25 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
     return nil;
 }
 
+- (MPIPlayer*) playerForDisplayName:(NSString*)displayName
+{
+    return [self playerForDisplayName:displayName logError:NO];
+}
+- (MPIPlayer*) playerForDisplayName:(NSString*)displayName logError:(BOOL)doLog
+{
+    
+    NSEnumerator *enumerator = [_knownPlayers objectEnumerator];
+    MPIPlayer* player;
+    while ((player = [enumerator nextObject])) {
+        if ([player.displayName isEqual:displayName]) {
+            return player;
+        }
+    }
+    
+    if (doLog) { MPIError(@"No Player for displayName: %@", displayName); }
+    return nil;
+}
+
 #pragma mark - Time sync
 // initiates simple algorithm to calculate system time delta with specified player
 - (void)calculateTimeDeltaFromPeer:(id)nearbyPeerID
@@ -253,14 +272,26 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
     // lookup player for peer ... ignore not found error/logging
     MPIPlayer* player = [self playerForPeerID:nearbyPeerID logError:NO];
     if (!player) {
-        // add as new known player
-        MPIPlayer* newPlayer = [[MPIPlayer alloc] init];
-        newPlayer.displayName = nearbyPeerID.displayName;
-        newPlayer.peerID = nearbyPeerID;
-        newPlayer.state = state;
-        [_knownPlayers setObject:newPlayer forKey:newPlayer.playerID];
-        
-        [self postNewLinkToApi:newPlayer];
+        // check for same display name
+        // HACK HACK HACKY
+        unsigned long guidStartIndex = nearbyPeerID.displayName.length - 38;
+        NSString* playerDisplayName = [nearbyPeerID.displayName substringToIndex:guidStartIndex];
+        player = [self playerForDisplayName:playerDisplayName];
+        if (player != nil) {
+            // update existing
+            player.peerID = nearbyPeerID;
+            player.state = state;
+            [self sendPlayerToApi:player isNew:NO];
+        } else {
+            // add as new known player
+            MPIPlayer* newPlayer = [[MPIPlayer alloc] init];
+            newPlayer.displayName = playerDisplayName;
+            newPlayer.peerID = nearbyPeerID;
+            newPlayer.state = state;
+            [_knownPlayers setObject:newPlayer forKey:newPlayer.playerID];
+            
+            [self postNewLinkToApi:newPlayer];
+        }
     } else {
         // update state
         player.state = state;
@@ -273,9 +304,14 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
         player.lastHeartbeatSentToPeerAt != nil &&          // and there was previously a connection
         [self allPlayersAre:MPIPeerStateDisconnected]) {    // and there are no other connected peers
                                                             // then, queue up reset
+        // invalidate previous
+        if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
+        
+        MPIDebug(@"Scheduling resetLocalSessionIfNoneConnected due to transition to MPIPeerStateDisconnected.");
         _sessionResetTimer = [NSTimer scheduledTimerWithTimeInterval:kDiconnectedSessionResetTimeout target:self
                                        selector:@selector(resetLocalSessionIfNoneConnected:) userInfo:nil repeats:NO];
     } else if (state != MPIPeerStateDisconnected) {
+        MPIDebug(@"RESET sessionResetTimer.");
         // cancel reset timer ... if a peer transitions out of Disconnected state
         if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
     }
@@ -305,6 +341,13 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
 
 - (void)session:(MPISessionController *)session allDisconnectedViaPeer:(MCPeerID*)peerID
 {
+    
+    MPIDebug(@"RESET sessionResetTimer.");
+    // invalidate previous
+    if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
+    
+    
+    MPIDebug(@"Schedul sessionResetTimer.");
     // queue up reset
     _sessionResetTimer = [NSTimer scheduledTimerWithTimeInterval:kDiconnectedSessionResetTimeout target:self
                                                      selector:@selector(resetLocalSessionIfNoneConnected:) userInfo:nil repeats:NO];
@@ -688,7 +731,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
             [self sendPlayerToApi:player isNew:NO];
             
         } else {
-            MPIDebug(@"NOT sending hearbeat when player state is %ld", player.state);
+            MPIDebug(@"NOT sending hearbeat when player state is %d", player.state);
         }
         
     }

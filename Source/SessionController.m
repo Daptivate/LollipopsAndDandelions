@@ -201,11 +201,12 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             [self startBrowsing];
             break;
         default:
+            // state change notice is sent in startAdvertising ... and startBrowsing
+            // so only send if not one of those states
+            // NOTE: this is not an expected case
             [self.delegate session:self didChangeState:_localSessionState];
     }
     
-    // state change notice is setn in startAdvertising ... and startBrowsing
-    //[self.delegate session:self didChangeState:_localSessionState];
     
 }
 
@@ -601,6 +602,21 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         return;
     }
     
+    // don't accept invitations when session state is Browsing
+    if (_localSessionState == MPILocalSessionStateBrowsing) {
+        MPIDebug(@"IGNORING invitation while Browsing.");
+        invitationHandler(NO, self.session);
+        // update peer state
+        [self.delegate peer:peerID didChangeState:MPIPeerStateInviteDeclined];
+        return;
+    }
+    
+    // ALWAYS sending accept if session is valid ... and not from self
+    invitationHandler(YES, self.session);
+    // update peer state
+    [self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
+    
+    /*
     if (self.session.connectedPeers.count == 0) {
         invitationHandler(YES, self.session);
         // update peer state
@@ -610,7 +626,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         invitationHandler(NO, self.session);
         // update peer state
         [self.delegate peer:peerID didChangeState:MPIPeerStateInviteDeclined];
-    }
+    }*/
 
 }
 
