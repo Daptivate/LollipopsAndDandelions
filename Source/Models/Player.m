@@ -13,12 +13,23 @@
 
 @implementation MPIPlayer
 
+
 - (id)init {
-    
     self = [super init];
     if (self) {
-        // create unique id on construction
+        // default to generating unique id for new players
         _playerID = [[NSUUID UUID] UUIDString];
+        _isSessionCreator = NO;
+        _state = MPIPeerStateDiscovered;
+    }
+    return self;
+}
+
+// allow id for player to be specified on creation
+- (id)initWithPlayerId:(NSString *)playerID {
+    self = [super init];
+    if (self) {
+        _playerID = playerID;
     }
     return self;
 }
@@ -125,6 +136,7 @@
 + (NSDictionary *)JSONKeyPathsByPropertyKey {
     return @{
              @"mongoID": @"mongoID",
+             @"isSessionCreator":@"isSessionCreator",
              @"playerID": @"playerID",
              @"displayName": @"displayName",
              @"peerID": @"peerID",

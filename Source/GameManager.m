@@ -27,7 +27,10 @@ static int const kTimeSyncIterations = 10;
 static int const kHearbeatIntervalSeconds = 2;
 static int const kDiconnectedSessionResetTimeout = 10;
 
-static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost:3000";
+static NSString * const kLocalPlayerIDKey = @"mpi-local-playerid";
+
+static BOOL const kEnableVizByDefault = YES;
+static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuapp.com";
 
 @implementation MPIGameManager
 
@@ -35,9 +38,36 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com"; //@"localhost
     
     self = [super init];
     if (self) {
+        _enableVizApi = kEnableVizByDefault;
+        
+        // check if this device has a saved player ID
+        NSString* localPlayerID;
+        NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
+        NSData *playerIDData = [userDefaults dataForKey:kLocalPlayerIDKey];
+        if (playerIDData == nil) {
+            // create and store once
+            //
+            
+            // create unique id on construction
+            localPlayerID = [[NSUUID UUID] UUIDString];
+            
+            // save to user defaults
+            playerIDData = [NSKeyedArchiver archivedDataWithRootObject:localPlayerID];
+            [userDefaults setObject:playerIDData forKey:kLocalPlayerIDKey];
+            [userDefaults synchronize];
+            
+            MPIDebug(@"created and saved playerID");
+        } else {
+            // get existing playerID from defaults
+            localPlayerID = [NSKeyedUnarchiver unarchiveObjectWithData:playerIDData];
+            
+            MPIDebug(@"retrieved existing peerID");
+        }
+        
         // create local player and set display name
-        _localPlayer = [[MPIPlayer alloc] init];
+        _localPlayer = [[MPIPlayer alloc] initWithPlayerId:localPlayerID];
         _localPlayer.displayName = [[UIDevice currentDevice] name];
+        _localPlayer.isSessionCreator = YES;
         // initial configuration
         [self configure];
         [self postSessionInfoToApi];
