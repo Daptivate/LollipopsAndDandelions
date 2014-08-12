@@ -70,7 +70,7 @@
     [self killExpireNotification];
     
     // if peers connected, setup kill switch
-    if ([MPIGameManager instance].connectedPeers.count != 0)
+    if ([MPIGameManager instance].knownPlayers.count != 0)
     {
         // create notification that will get the user back into the app when the background process time is about to expire
         //NSTimeInterval msgTime = UIApplication.sharedApplication.backgroundTimeRemaining - gracePeriod;
@@ -100,7 +100,11 @@
     NSLog(@"applicationDidEnterBackground");
     self.endSessionTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^
                              {
-                                 [[MPIGameManager instance] shutdown];
+                                 // TEST: try letting the GameManager handle reset of sessions
+                                 // when the app comes into foreground
+                                 
+                                 //[[MPIGameManager instance] shutdown];
+                                 
                                  [[UIApplication sharedApplication] endBackgroundTask:self.endSessionTaskId];
                                  self.endSessionTaskId = UIBackgroundTaskInvalid;
                              }];
@@ -111,7 +115,11 @@
     NSLog(@"applicationWillEnterBackground");
     self.endSessionTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^
                    {
-                       [[MPIGameManager instance] shutdown];
+                       // TEST: try letting the GameManager handle reset of sessions
+                       // when the app comes into foreground
+                       
+                       //[[MPIGameManager instance] shutdown];
+                       
                        [[UIApplication sharedApplication] endBackgroundTask:self.endSessionTaskId];
                        self.endSessionTaskId = UIBackgroundTaskInvalid;
                    }];

@@ -201,7 +201,7 @@ static OSStatus renderCallback(__unsafe_unretained MPIInputStreamChannel *THIS,
                                                 NULL,
                                                 AEAudioControllerAudioDescription(audioController));
         
-        NSLog(@"fillCount (%i) > frames (%i)", fillCount, frames);
+        NSLog(@"fillCount (%i) > frames (%i)", (unsigned int)fillCount, (unsigned int)frames);
     }
     
     TPCircularBufferDequeueBufferListFrames(&THIS->_buffer,

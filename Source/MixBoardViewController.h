@@ -10,17 +10,13 @@
 @import MediaPlayer;
 @import AVFoundation;
 
-@interface MPIMixBoardViewController : UITableViewController<UITableViewDataSource, UITableViewDelegate, AVAudioPlayerDelegate, MPMediaPickerControllerDelegate>
+@interface MPIMixBoardViewController : UITableViewController<UITableViewDataSource, UITableViewDelegate, AVAudioPlayerDelegate>
 
 @property (strong, nonatomic) IBOutlet UITableView *participantTableView;
-@property (weak, nonatomic) IBOutlet UITextField *nameInput;
+@property (weak, nonatomic) IBOutlet UILabel *nameLabel;
 @property (weak, nonatomic) IBOutlet UILabel *timeLabel;
 @property (weak, nonatomic) IBOutlet UILabel *timeWithOffsetLabel;
-- (IBAction)songsClicked:(id)sender;
-- (IBAction)advertiseChanged:(id)sender;
-- (IBAction)browseChanged:(id)sender;
-- (IBAction)micChanged:(id)sender;
-- (IBAction)logToApiChanged:(id)sender;
+@property (weak, nonatomic) IBOutlet UILabel *localSessionStateLabel;
 - (IBAction)reverbChanged:(id)sender;
 - (IBAction)gainChanged:(id)sender;
 - (IBAction)limiterChanged:(id)sender;

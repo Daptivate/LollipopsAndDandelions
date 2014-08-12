@@ -8,16 +8,15 @@
 
 #import "SessionController.h"
 #import "GameManager.h"
+#import "Player.h"
 #import "Message.h"
 #import "MPIEventLogger.h"
 #import <CommonCrypto/CommonDigest.h>
 
 @interface MPISessionController () // Class extension
 
-@property (readwrite) MPILocalSessionState mySessionState;  // track state of managed MCSession
 @property (readwrite) MPIPeerState myPeerState;             // track state of local peer
 
-@property (nonatomic, strong) MCPeerID *peerID;
 @property (nonatomic, strong) MCSession *session;
 @property (nonatomic, strong) MCNearbyServiceAdvertiser *serviceAdvertiser;
 @property (nonatomic, strong) MCNearbyServiceBrowser *serviceBrowser;
@@ -40,42 +39,36 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 
 #pragma mark - Initializer
 
-- (instancetype)init
+- (instancetype)initForPlayer:(MPIPlayer*)player
 {
     self = [super init];
     
     if (self)
     {
-        _mySessionState = MPILocalSessionStateNotCreated;
+        self = [self initForPlayer:player withState:MPILocalSessionStateCreated];
+    }
+    return self;
+}
+
+- (instancetype)initForPlayer:(MPIPlayer*)player withState:(MPILocalSessionState)state
+{
+    self = [super init];
+    
+    if (self)
+    {
+        // it is assumed that the player ID and displayName
+        // have been initialized prior to calling this method
+        _localPlayer = player;
         
-        // capture function name for event logging
-        NSString* source = [[NSString alloc] initWithUTF8String:__PRETTY_FUNCTION__];
+        // default initial state
+        _localSessionState = state;
         
-        // check if this device has a saved peer ID
-        NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-        NSData *peerIDData = [userDefaults dataForKey:kLocalPeerIDKey];
-        if (peerIDData == nil) {
-            // create and store once
-            //
-            // TODO: get this using JBDeviceOwner or similar on first launch
-            _peerID = [[MCPeerID alloc] initWithDisplayName:[[UIDevice currentDevice] name]];
-            // save to user defaults
-            NSData *peerIDData = [NSKeyedArchiver archivedDataWithRootObject:_peerID];
-            [userDefaults setObject:peerIDData forKey:kLocalPeerIDKey];
-            [userDefaults synchronize];
-            
-            [[MPIEventLogger sharedInstance] log:source description:@"created and saved peerID"];
-        } else {
-            // get existing peerID from defaults
-            _peerID = [NSKeyedUnarchiver unarchiveObjectWithData:peerIDData];
-            
-            [[MPIEventLogger sharedInstance] log:source description:@"retrieved existing peerID"];
-        }
+        
+        NSString *nameWithUUID = [[NSString alloc] initWithFormat:@"%@ <%@>", player.displayName, [[NSUUID UUID] UUIDString]];
+        _localPlayer.peerID = [[MCPeerID alloc] initWithDisplayName:nameWithUUID];
         
         
         _invitations = [[NSMutableDictionary alloc] init];
-        
-        _displayName = _peerID.displayName;
     }
     
     return self;
@@ -106,22 +99,22 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     [self sendMessage:@"4" value:time toPeer:peer];
 }
 
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer {
-    [self sendMessage:type value:val toPeer:peer asReliable:YES];
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer {
+    return [self sendMessage:type value:val toPeer:peer asReliable:YES];
 }
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable {
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable {
     
     // convert single peer to array
     NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
     
     // call overriden method
-    [self sendMessage:type value:val toPeers:peers asReliable:reliable];
+    return [self sendMessage:type value:val toPeers:peers asReliable:reliable];
 }
 
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers{
-    [self sendMessage:type value:val toPeers:peers asReliable:YES];
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers{
+    return [self sendMessage:type value:val toPeers:peers asReliable:YES];
 }
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
     NSDate* sendDt = [NSDate date];
     // create message object
     MPIMessage *msg = [[MPIMessage alloc] init];
@@ -130,21 +123,21 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     msg.createdAt = [[MPIEventLogger sharedInstance] timeWithOffset:sendDt];
 
     // use override
-    [self sendMessage:msg toPeers:peers];
+    return [self sendMessage:msg toPeers:peers];
 }
 
-- (void) sendMessage:(id)msg toPeer:(MCPeerID *)peer {
+- (BOOL) sendMessage:(id)msg toPeer:(MCPeerID *)peer {
     // convert single peer to array
     NSArray *peers = [[NSArray alloc] initWithObjects:peer, nil];
     
     // call overriden method
-    [self sendMessage:msg toPeers:peers];
+    return [self sendMessage:msg toPeers:peers];
 }
 
-- (void) sendMessage:(id)msg toPeers:(NSArray *)peers {
-    [self sendMessage:msg toPeers:peers asReliable:YES];
+- (BOOL) sendMessage:(id)msg toPeers:(NSArray *)peers {
+    return [self sendMessage:msg toPeers:peers asReliable:YES];
 }
-- (void) sendMessage:(id)msg toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
+- (BOOL) sendMessage:(id)msg toPeers:(NSArray *)peers asReliable:(BOOL)reliable {
      
     // serialize as JSON dictionary
     NSDictionary* json = [MTLJSONAdapter JSONDictionaryFromModel:msg];
@@ -158,18 +151,10 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                        withMode:(reliable ? MCSessionSendDataReliable : MCSessionSendDataUnreliable)
                           error:&error]) {
         MPIError(@"[Error] sending data %@", error);
-        // if code is 1, then peer is not reachable
-        //
-        // TODO: how to handle case of single peer causing error?
-        //
-        if (error.code == 1) {
-            for ( int i = 0; i < peers.count; i++) {
-                [self.delegate peer:peers[i] didChangeState:MPIPeerStateDisconnected];
-            }
-        }
         
         // don't continue if there was an error
-        return;
+        // let caller determine whether this should cause transition in peer state
+        return NO;
     }
     
     // log to server
@@ -181,29 +166,47 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                                    start:[NSDate date]
                                      end:nil
                                     data:json];
+    return YES;
 }
 
 
 #pragma mark - Start or Stop session controller
 
+
 - (void)startup
 {
+    [self startupWithState:_localSessionState];
+}
+- (void)startupWithState:(MPILocalSessionState)state
+{
     // Create the session that peers will be invited/join into.
-    _session = [[MCSession alloc] initWithPeer:self.peerID];
+    _session = [[MCSession alloc] initWithPeer:_localPlayer.peerID];
     self.session.delegate = self;
     
-    MPIDebug(@"created session for peerID: %@", self.peerID.displayName);
+    MPIDebug(@"created session for: %@", _localPlayer.displayName);
     
-    // update local state
-    _mySessionState = MPILocalSessionStateCreated;
+    _localSessionState = state;
     
-
-    // advertise for a bit
-    [self startAdvertising];
-    // then switch to browse if no invite was received after
-    _advertiseTimer = [NSTimer scheduledTimerWithTimeInterval:kInitialAdvertiseSeconds target:self
-                                           selector:@selector(advertiseTimedOut:) userInfo:nil repeats:NO];
-
+    switch(state){
+        case MPILocalSessionStateCreated:
+        case MPILocalSessionStateAdvertising:
+            // advertise for a bit
+            [self startAdvertising];
+            // then switch to browse if no invite was received after
+            _advertiseTimer = [NSTimer scheduledTimerWithTimeInterval:kInitialAdvertiseSeconds target:self
+                                                             selector:@selector(advertiseTimedOut:) userInfo:nil repeats:NO];
+            break;
+            
+        case MPILocalSessionStateBrowsing:
+            [self startBrowsing];
+            break;
+        default:
+            // state change notice is sent in startAdvertising ... and startBrowsing
+            // so only send if not one of those states
+            // NOTE: this is not an expected case
+            [self.delegate session:self didChangeState:_localSessionState];
+    }
+    
     
 }
 
@@ -218,7 +221,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 
 - (void)shutdown
 {
-    MPIDebug(@"teardown session for peerID: %@", self.peerID.displayName);
+    MPIDebug(@"teardown session for: %@", _localPlayer.displayName);
     
     [self.session disconnect];
     
@@ -227,7 +230,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     _serviceAdvertiser = nil;
     
     // update local state
-    _mySessionState = MPILocalSessionStateNotCreated;
+    _localSessionState = MPILocalSessionStateNotCreated;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - Control advertising and browsing
@@ -237,18 +241,19 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     // Create the service advertiser ... if not yet created
     if (_serviceAdvertiser == nil) {
-        _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:self.peerID
+        _serviceAdvertiser = [[MCNearbyServiceAdvertiser alloc] initWithPeer:_localPlayer.peerID
                                                                discoveryInfo:nil
                                                                  serviceType:kMCSessionServiceType];
         self.serviceAdvertiser.delegate = self;
         
-        MPIDebug(@"created advertiser for peerID: %@", self.peerID.displayName);
+        MPIDebug(@"created advertiser for: %@", _localPlayer.displayName);
     }
     
-    NSLog(@"startAdvertising");
+    MPIDebug(@"startAdvertising");
     [self.serviceAdvertiser startAdvertisingPeer];
     
-    _mySessionState = MPILocalSessionStateAdvertising;
+    _localSessionState = MPILocalSessionStateAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)stopAdvertising
 {
@@ -256,23 +261,25 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     if (_serviceAdvertiser != nil) { [self.serviceAdvertiser stopAdvertisingPeer]; }
     
     // TODO: double check appropriate next state on advertise stop
-    _mySessionState = MPILocalSessionStateNotAdvertising;
+    _localSessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)startBrowsing
 {
     // Create the service browser ... if not yet created
     if (_serviceBrowser == nil) {
-        _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:self.peerID
+        _serviceBrowser = [[MCNearbyServiceBrowser alloc] initWithPeer:_localPlayer.peerID
                                                            serviceType:kMCSessionServiceType];
         self.serviceBrowser.delegate = self;
         
-        MPIDebug(@"created browser for peerID: %@", self.peerID.displayName);
+        MPIDebug(@"created browser for: %@", _localPlayer.displayName);
     }
     
     MPIDebug(@"startBrowsing");
     [self.serviceBrowser startBrowsingForPeers];
     
-    _mySessionState = MPILocalSessionStateBrowsing;
+    _localSessionState = MPILocalSessionStateBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 - (void)stopBrowsing
 {
@@ -280,7 +287,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     if (_serviceBrowser != nil) { [self.serviceBrowser stopBrowsingForPeers]; }
     
     // TODO: double check appropriate next state on browsing stop
-    _mySessionState = MPILocalSessionStateNotBrowsing;
+    _localSessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - MCSessionDelegate protocol conformance
@@ -313,7 +321,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                 [[MPIEventLogger sharedInstance] info:@"Invitation" description:description tags:tags start:inviteBeganAt end:[[NSDate alloc] init]];
                 
                 // initiate time sync & save self as time server
-                _timeServerPeerID = _peerID;
+                _timeServerPeerID = _localPlayer.peerID;
                 [[MPIGameManager instance] requestTimeSync:peerID value:0];
                 
                 // change peer state to time syncing
@@ -325,9 +333,12 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             }
             
             // check if local session state should change to created
+            /* NOT CHANGING TO CONNECTED ... SO THAT WE PERSIST THE ADVERTISE vs. BROWSING state
             if (self.session.connectedPeers.count > 0) {
-                _mySessionState = MPILocalSessionStateConnected;
+                _localSessionState = MPILocalSessionStateConnected;
+                [self.delegate session:self didChangeState:_localSessionState];
             }
+             */
             break;
         }
             
@@ -338,7 +349,14 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             
             // check if local session state should fall back to created
             if (self.session.connectedPeers.count <= 0) {
-                _mySessionState = MPILocalSessionStateCreated;
+                //_localSessionState = MPILocalSessionStateCreated;
+                //[self.delegate session:self didChangeState:_localSessionState];
+                
+                //
+                //TEST: let GameManager handle this detection
+                //
+                // notify delegate that MCSession thinks there are no more connected peers
+                //[self.delegate session:self allDisconnectedViaPeer:peerID];
             }
             break;
         }
@@ -391,20 +409,21 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             _timeServerPeerID = nearbyPeerID;
             
             // initiate time sync with requestor
-            [[MPIGameManager instance] calculateTimeDeltaFrom:nearbyPeerID];
+            [[MPIGameManager instance] calculateTimeDeltaFromPeer:nearbyPeerID];
             
             [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateSyncingTime];
             
         } else if([action isEqualToString:@"Time"]) {
             //
             // DANGER: what if peers have the same display name
-            if ([_timeServerPeerID.displayName isEqualToString:_peerID.displayName]) {
+            // HA! No longer a problem with unique ID generation
+            if ([_timeServerPeerID.displayName isEqualToString:_localPlayer.peerID.displayName]) {
                 // this is the time server ... so just reply with timestamp
                 [self sendTimestamp:nearbyPeerID];
                 
             } else {
                 // this is peer that is requesting sync
-                BOOL isDone = [[MPIGameManager instance] recievedTimestamp:nearbyPeerID value:0];
+                BOOL isDone = [[MPIGameManager instance] recievedTimestampFromPeer:nearbyPeerID value:0];
                 if (isDone) {
                     [self.delegate peer:nearbyPeerID didChangeState:MPIPeerStateConnected];
                     
@@ -460,7 +479,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
             MPIDebug(@"url = %@, copyPath = %@", resultingURL, copyPath);
             
             // tell game manager about it .. should use self ID ... since it was for self
-            [self.delegate session:self didReceiveAudioFileFrom:_peerID.displayName atPath:copyPath];
+            [self.delegate session:self didReceiveAudioFileFrom:_localPlayer.peerID atPath:copyPath];
         }
     }
 }
@@ -519,7 +538,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     //
     // TODO: are there other condition under which invitation should not be sent??
     //
-    if (self.session != nil && _mySessionState != MPILocalSessionStateNotCreated) {
+    if (self.session != nil && _localSessionState != MPILocalSessionStateNotCreated) {
         MPIDebug(@"Inviting %@", remotePeerName);
         
         // save invitation start for this peer
@@ -549,14 +568,15 @@ static double const kInitialAdvertiseSeconds = 7.0f;
     MPIDebug(@"lostPeer %@. session.connectedPeers: %@", peerID.displayName, [self printSessionConnectedPeers]);
     
     // update peer connection state
-    [self.delegate peer:peerID didChangeState:MPIPeerStateDisconnected];
+    [self.delegate peer:peerID didChangeState:MPIPeerStateStale];
 }
 
 - (void)browser:(MCNearbyServiceBrowser *)browser didNotStartBrowsingForPeers:(NSError *)error
 {
     MPIDebug(@"didNotStartBrowsingForPeers: %@", error);
     
-    _mySessionState = MPILocalSessionStateNotBrowsing;
+    _localSessionState = MPILocalSessionStateNotBrowsing;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 #pragma mark - MCNearbyServiceAdvertiserDelegate protocol conformance
@@ -565,14 +585,38 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     MPIDebug(@"didReceiveInvitationFromPeer %@", peerID.displayName);
     
-    // cancel advertise timer on receipt of invitation
-    [_advertiseTimer invalidate];
+    if (_advertiseTimer) {
+        MPIDebug(@"INVALIDATING ADVERTISE TIMER");
+        // cancel advertise timer on receipt of invitation
+        [_advertiseTimer invalidate];
+        _advertiseTimer = nil;
+    }
     
     //
     // Only accept if not already in session.
     // This is to prevent multiple networks from being created.
     //
     
+    if (!self.session) {
+        MPIError(@"SESSION is NULL for receipt of invitation from %@.  Me: %@", peerID.displayName, _localPlayer.peerID.displayName);
+        return;
+    }
+    
+    // don't accept invitations when session state is Browsing
+    if (_localSessionState == MPILocalSessionStateBrowsing) {
+        MPIDebug(@"IGNORING invitation while Browsing.");
+        invitationHandler(NO, self.session);
+        // update peer state
+        [self.delegate peer:peerID didChangeState:MPIPeerStateInviteDeclined];
+        return;
+    }
+    
+    // ALWAYS sending accept if session is valid ... and not from self
+    invitationHandler(YES, self.session);
+    // update peer state
+    [self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
+    
+    /*
     if (self.session.connectedPeers.count == 0) {
         invitationHandler(YES, self.session);
         // update peer state
@@ -582,7 +626,7 @@ static double const kInitialAdvertiseSeconds = 7.0f;
         invitationHandler(NO, self.session);
         // update peer state
         [self.delegate peer:peerID didChangeState:MPIPeerStateInviteDeclined];
-    }
+    }*/
 
 }
 
@@ -590,7 +634,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
 {
     MPIWarn(@"didNotStartAdvertisingForPeers: %@", error);
     
-    _mySessionState = MPILocalSessionStateNotAdvertising;
+    _localSessionState = MPILocalSessionStateNotAdvertising;
+    [self.delegate session:self didChangeState:_localSessionState];
 }
 
 //

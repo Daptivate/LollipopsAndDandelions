@@ -7,18 +7,7 @@
 //
 
 #import <MultipeerConnectivity/MultipeerConnectivity.h>
-
-// Custom Peer connection states
-typedef NS_ENUM(NSInteger, MPIPeerState) {
-    MPIPeerStateDiscovered,         // the peer has been discovered but is not yet connected
-    MPIPeerStateInvited,            // the invitation was sent
-    MPIPeerStateInviteAccepted,     // the invitation was accepted
-    MPIPeerStateInviteDeclined,     // the invitation was declined
-    MPIPeerStateSyncingTime,        // the time sync process is in progress
-    MPIPeerStateConnected,          // connected to the session
-    MPIPeerStateStale,              // when a heartbeat is missed, state will change to Stale
-    MPIPeerStateDisconnected        // previously connected peer is no longer connected
-};
+#import "Player.h"
 
 // Custom states for the controller to abstract local MCSession behavior
 typedef NS_ENUM(NSInteger, MPILocalSessionState) {
@@ -30,7 +19,6 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
     MPILocalSessionStateNotBrowsing,
     MPILocalSessionStateConnected
 };
-
 
 @protocol MPISessionControllerDelegate;
 
@@ -46,12 +34,18 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
  */
 @interface MPISessionController : NSObject <MCSessionDelegate, MCNearbyServiceBrowserDelegate, MCNearbyServiceAdvertiserDelegate>
 
+
+- (instancetype)initForPlayer:(MPIPlayer*)player;
+
+- (instancetype)initForPlayer:(MPIPlayer*)player withState:(MPILocalSessionState)state;
+
+@property (readwrite) MPILocalSessionState localSessionState;  // track state of managed MCSession
+
 @property (nonatomic, weak) id<MPISessionControllerDelegate> delegate;
 
-//
-// TODO : refactor these state variables out of SessionController to separate concerns
-//
-@property (nonatomic, readonly) NSString *displayName;
+// player for this device and session controller
+// displayName and peerID are initialized in initForPlayer
+@property (nonatomic, readonly) MPIPlayer* localPlayer;
 
 
 // creates and returns stream for peer via current session
@@ -68,13 +62,13 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 // send timestamp with value to peer
 - (void)sendTimestamp:(NSNumber*)val toPeer:(MCPeerID*)peer;
 // overloads for sending message with type and val to a single or multiple peers
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer;
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable;
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray*)peers;
-- (void)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray*)peers asReliable:(BOOL)reliable;
-- (void)sendMessage:(id)msg toPeer:(MCPeerID*)peer;
-- (void)sendMessage:(id)msg toPeers:(NSArray*)peers;
-- (void)sendMessage:(id)msg toPeers:(NSArray*)peers asReliable:(BOOL)reliable;
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer;
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeer:(MCPeerID*)peer asReliable:(BOOL)reliable;
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray*)peers;
+- (BOOL)sendMessage:(NSString*)type value:(NSNumber*)val toPeers:(NSArray*)peers asReliable:(BOOL)reliable;
+- (BOOL)sendMessage:(id)msg toPeer:(MCPeerID*)peer;
+- (BOOL)sendMessage:(id)msg toPeers:(NSArray*)peers;
+- (BOOL)sendMessage:(id)msg toPeers:(NSArray*)peers asReliable:(BOOL)reliable;
 
 // send audio file to peer
 - (void)sendAudioFileAtPath:(NSString*)filePath toPeer:(id)peerID;
@@ -100,6 +94,9 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 // Local session changed state
 - (void)session:(MPISessionController *)session didChangeState:(MPILocalSessionState)state;
 
+// There are no more connected peers ... triggered via didChangeState
+- (void)session:(MPISessionController *)session allDisconnectedViaPeer:(MCPeerID*)peerID;
+
 // raw audio input ... e.g. - mic
 - (void)session:(MPISessionController *)session didReceiveAudioStream:(NSInputStream *)stream;
 
@@ -107,7 +104,7 @@ typedef NS_ENUM(NSInteger, MPILocalSessionState) {
 - (void)session:(MPISessionController *)session didReceiveAudioFileStream:(NSInputStream *)stream;
 
 // recieved audio file
-- (void)session:(MPISessionController *)session didReceiveAudioFileFrom:(NSString*)playerName atPath:(NSString*)filePath;
+- (void)session:(MPISessionController *)session didReceiveAudioFileFrom:(MCPeerID*)peerID atPath:(NSString*)filePath;
 
 @end
 

@@ -47,6 +47,8 @@
 		08943D6E19533B1900D226AE /* LICENCE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 08943D6B19533B1900D226AE /* LICENCE.txt */; };
 		08943D6F19533B1900D226AE /* Reachability.m in Sources */ = {isa = PBXBuildFile; fileRef = 08943D6D19533B1900D226AE /* Reachability.m */; };
 		08C5F0D11964AD410038E81B /* MPIInputStreamChannel.m in Sources */ = {isa = PBXBuildFile; fileRef = 08C5F0D01964AD410038E81B /* MPIInputStreamChannel.m */; };
+		08D75D01198D35A60060AD45 /* MPISettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 08D75D00198D35A60060AD45 /* MPISettingsViewController.m */; };
+		08E0958E1992B676005848F3 /* RestUtil.m in Sources */ = {isa = PBXBuildFile; fileRef = 08E0958D1992B676005848F3 /* RestUtil.m */; };
 		08ED7337195C8B2800FFCB34 /* MPISongInfoMessage.m in Sources */ = {isa = PBXBuildFile; fileRef = 08ED7336195C8B2800FFCB34 /* MPISongInfoMessage.m */; };
 		27382F9E18D15B2700BAAFB9 /* Organ Run.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 27382F9B18D15B2700BAAFB9 /* Organ Run.m4a */; };
 		27382F9F18D15B2700BAAFB9 /* Southern Rock Drums.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 27382F9C18D15B2700BAAFB9 /* Southern Rock Drums.m4a */; };
@@ -148,6 +150,10 @@
 		08943D6D19533B1900D226AE /* Reachability.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Reachability.m; sourceTree = "<group>"; };
 		08C5F0CF1964AD410038E81B /* MPIInputStreamChannel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MPIInputStreamChannel.h; sourceTree = "<group>"; };
 		08C5F0D01964AD410038E81B /* MPIInputStreamChannel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MPIInputStreamChannel.m; sourceTree = "<group>"; };
+		08D75CFF198D35A60060AD45 /* MPISettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MPISettingsViewController.h; path = Source/MPISettingsViewController.h; sourceTree = "<group>"; };
+		08D75D00198D35A60060AD45 /* MPISettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MPISettingsViewController.m; path = Source/MPISettingsViewController.m; sourceTree = "<group>"; };
+		08E0958C1992B676005848F3 /* RestUtil.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RestUtil.h; path = Source/Util/RestUtil.h; sourceTree = "<group>"; };
+		08E0958D1992B676005848F3 /* RestUtil.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = RestUtil.m; path = Source/Util/RestUtil.m; sourceTree = "<group>"; };
 		08ED7335195C8B2800FFCB34 /* MPISongInfoMessage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MPISongInfoMessage.h; path = Source/Models/MPISongInfoMessage.h; sourceTree = "<group>"; };
 		08ED7336195C8B2800FFCB34 /* MPISongInfoMessage.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MPISongInfoMessage.m; path = Source/Models/MPISongInfoMessage.m; sourceTree = "<group>"; };
 		27382F9B18D15B2700BAAFB9 /* Organ Run.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Organ Run.m4a"; path = "Resources/Organ Run.m4a"; sourceTree = "<group>"; };
@@ -273,6 +279,8 @@
 			isa = PBXGroup;
 			children = (
 				088B9F1C19476187006A27E4 /* Main.storyboard */,
+				08D75CFF198D35A60060AD45 /* MPISettingsViewController.h */,
+				08D75D00198D35A60060AD45 /* MPISettingsViewController.m */,
 				088B9F031947609C006A27E4 /* HomeViewController.h */,
 				088B9F041947609C006A27E4 /* HomeViewController.m */,
 				088B9F051947609C006A27E4 /* MixBoardTableCell.h */,
@@ -421,6 +429,8 @@
 			children = (
 				088B9EE819476034006A27E4 /* PropertyUtil.h */,
 				088B9EE919476034006A27E4 /* PropertyUtil.m */,
+				08E0958C1992B676005848F3 /* RestUtil.h */,
+				08E0958D1992B676005848F3 /* RestUtil.m */,
 			);
 			name = Util;
 			sourceTree = "<group>";
@@ -608,9 +618,11 @@
 				088B9F111947609C006A27E4 /* HomeViewController.m in Sources */,
 				083B3BD819745F000022C6C6 /* NSMutableArray+QueueMethods.m in Sources */,
 				083B3BD919745F000022C6C6 /* TDAudioFileStream.m in Sources */,
+				08D75D01198D35A60060AD45 /* MPISettingsViewController.m in Sources */,
 				088B9F0E1947609C006A27E4 /* AppDelegate.m in Sources */,
 				083B3BDE19745F000022C6C6 /* TDAudioQueueFiller.m in Sources */,
 				083B3BE319745F000022C6C6 /* TDAudioStreamerConstants.m in Sources */,
+				08E0958E1992B676005848F3 /* RestUtil.m in Sources */,
 				08943D6F19533B1900D226AE /* Reachability.m in Sources */,
 				088B9EFA19476048006A27E4 /* JoinRequest.m in Sources */,
 			);
@@ -743,7 +755,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "$(SRCROOT)/Source/Multipeer.Instrument-Prefix.pch";
 				INFOPLIST_FILE = "$(SRCROOT)/Source/Multipeer.Instrument-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 7.1;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
@@ -761,12 +773,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer: Kyle Beyer (39BTZ848P2)";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "$(SRCROOT)/Source/Multipeer.Instrument-Prefix.pch";
 				INFOPLIST_FILE = "$(SRCROOT)/Source/Multipeer.Instrument-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 7.1;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";

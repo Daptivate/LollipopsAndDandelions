@@ -10,30 +10,35 @@
 #import "SessionController.h"
 #import "MPISongInfoMessage.h"
 #import "MPIMotionManager.h"
+#import "Player.h"
+
 
 @interface MPIGameManager : NSObject<MPISessionControllerDelegate, MPIMotionManagerDelegate>
 
 + (MPIGameManager*)instance;
 
+// player for this device
+@property (readonly) MPIPlayer* localPlayer;
+
+// currently active session controller for this device
 @property (strong, nonatomic) MPISessionController *sessionController;
 
 // the time offset from 'server' or reference player acting as 'time server'
 @property (nonatomic) double timeDeltaSeconds;
 
-// initiates simple algorithm to calculate system time delta with specified player
-- (void)calculateTimeDeltaFrom:(id)playerID;
+// initiates simple algorithm to calculate system time delta with specified peer
+- (void)calculateTimeDeltaFromPeer:(id)nearbyPeerID;
 // returns the system time plus delta based on time sync process
 - (NSDate*)currentTime;
 
+// contains list of Player objects for any known peers
+@property (nonatomic, readonly) NSMutableDictionary *knownPlayers;
 
-@property (nonatomic, readonly) NSMutableOrderedSet *connectingPeers;
-@property (nonatomic, readonly) NSMutableOrderedSet *connectedPeers;
-@property (nonatomic, readonly) NSMutableOrderedSet *disconnectedPeers;
-
-
+@property (readwrite) BOOL enableVizApi;
 @property (readwrite) NSNumber* volume;
 @property (readwrite) NSNumber* color;
 @property (readwrite) MPISongInfoMessage *lastSongMessage;
+@property (readwrite) NSString* localSessionStateText;
 
 - (void)requestFlashChange:(id)playerID value:(NSNumber*)val;
 - (void)requestSoundChange:(id)playerID value:(NSNumber*)val;
@@ -42,7 +47,7 @@
 
 // handles time sync process
 // @return NO if timesync should continue, YES if it is complete
-- (BOOL)recievedTimestamp:(id)playerID value:(NSNumber*)val;
+- (BOOL)recievedTimestampFromPeer:(id)nearbyPeerID value:(NSNumber *)val;
 
 - (void)handleActionRequest:(NSDictionary*)json type:(NSString*)type fromPeer:(id)fromPeerID;
 
@@ -69,6 +74,8 @@
 
 - (void)startup;
 - (void)shutdown;
+
+- (void)resetLocalSession;
 
 - (void)startHeartbeatWithPeer:(id)peerID;
 @end
