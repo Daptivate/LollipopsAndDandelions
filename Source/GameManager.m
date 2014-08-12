@@ -30,7 +30,7 @@ static int const kDiconnectedSessionResetTimeout = 10;
 static NSString * const kLocalPlayerIDKey = @"mpi-local-playerid";
 
 static BOOL const kEnableVizByDefault = YES;
-static NSString* const kApiHost = @"localhost:3000"; //@"k6beventlogger.herokuapp.com";
+static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";//@"localhost:3000";
 
 @implementation MPIGameManager
 
