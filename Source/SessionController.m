@@ -328,8 +328,14 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                 [self.delegate peer:peerID didChangeState:MPIPeerStateSyncingTime];
                 
             } else {
-                // change peer state to inite accepted
-                [self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
+                
+                // change peer state to invite accepted
+                //[self.delegate peer:peerID didChangeState:MPIPeerStateInviteAccepted];
+                
+                // SHOULD THIS GO DIRECTLY TO CONNECTED?
+                // need to start heartbeat.. in case of Advertiser <-> connection
+                [self.delegate peer:peerID didChangeState:MPIPeerStateConnected];
+                
             }
             
             // check if local session state should change to created
@@ -352,11 +358,8 @@ static double const kInitialAdvertiseSeconds = 7.0f;
                 //_localSessionState = MPILocalSessionStateCreated;
                 //[self.delegate session:self didChangeState:_localSessionState];
                 
-                //
-                //TEST: let GameManager handle this detection
-                //
                 // notify delegate that MCSession thinks there are no more connected peers
-                //[self.delegate session:self allDisconnectedViaPeer:peerID];
+                [self.delegate session:self allDisconnectedViaPeer:peerID];
             }
             break;
         }

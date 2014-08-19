@@ -343,6 +343,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";//@"localhost:
         MPIDebug(@"RESET sessionResetTimer.");
         // cancel reset timer ... if a peer transitions out of Disconnected state
         if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
+        
     }
     
     // Ensure UI updates occur on the main queue.
@@ -376,7 +377,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";//@"localhost:
     if (_sessionResetTimer) { [_sessionResetTimer invalidate]; _sessionResetTimer = nil; }
     
     
-    MPIDebug(@"Schedul sessionResetTimer.");
+    MPIDebug(@"Schedule sessionResetTimer.");
     // queue up reset
     _sessionResetTimer = [NSTimer scheduledTimerWithTimeInterval:kDiconnectedSessionResetTimeout target:self
                                                      selector:@selector(resetLocalSessionIfNoneConnected:) userInfo:nil repeats:NO];
@@ -741,6 +742,7 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";//@"localhost:
         // ONLY send heartbeat if Connected (time sync complete) or Stale (possible temporary loss)
         if (player.state == MPIPeerStateConnected ||
             player.state == MPIPeerStateInvited ||
+            player.state == MPIPeerStateInviteAccepted || // TODO: will this cause issues with the time sync process?
             player.state == MPIPeerStateStale) {
         //if (player.state != MPIPeerStateStale) {
             BOOL success = [_sessionController sendMessage:@"8" value:[[NSNumber alloc] initWithDouble:timestamp] toPeer:player.peerID asReliable:NO];
