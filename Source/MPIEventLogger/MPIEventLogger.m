@@ -40,6 +40,8 @@ static NSString* const kApiHost = @"k6beventlogger.herokuapp.com";
     self = [super init];
     if (self) {
         _timeDeltaSeconds = 0;
+        _sourceFilters = [NSMutableArray array];
+        _descriptionFilters = [NSMutableArray array];
         // track if api url is reachable
         [self setupReachability];
         // initial configuration
@@ -122,6 +124,32 @@ description:(NSString*)description
     if (_logLevel < level) {
         return MPIEventPersistenceIgnore;
     }
+    
+    BOOL matchingSourceFilter = NO;
+    // check source filters
+    for (NSString* filter in _sourceFilters) {
+        if ([source containsString:filter]) {
+            matchingSourceFilter = YES;
+            break;
+        }
+    }
+    // when there are filters and no matching is found ... ignore log request
+    if (_sourceFilters.count > 0 && !matchingSourceFilter) {
+        return MPIEventPersistenceIgnore;
+    }
+    BOOL matchingDescriptionFilter = NO;
+    // check description filters
+    for (NSString* filter in _descriptionFilters) {
+        if ([description containsString:filter]) {
+            matchingDescriptionFilter = YES;
+            break;
+        }
+    }
+    // when there are filters and no matching is found ... ignore log request
+    if (_descriptionFilters.count > 0 && !matchingDescriptionFilter) {
+        return MPIEventPersistenceIgnore;
+    }
+    
     
     // create event object with device id set to current device name
     NSString* deviceName = [[UIDevice currentDevice] name];

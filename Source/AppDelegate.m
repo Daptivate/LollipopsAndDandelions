@@ -63,6 +63,11 @@
     // setup logger at INFO level and to console and API
     logger.logLevel = MPILoggerLevelFatal;
     logger.logDestination = MPILogDestinationConsole;
+    
+    // only interested in session controller events
+    //[logger.sourceFilters addObject:@"MPISessionController"];
+    [logger.sourceFilters addObject:@"MPIGame"];
+    [logger.descriptionFilters addObject:@"Peer"];
 }
 
 - (void) createExpireNotification

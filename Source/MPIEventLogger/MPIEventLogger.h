@@ -66,6 +66,12 @@ extern "C" {
 @property (nonatomic) double timeDeltaSeconds;
 - (NSDate*)timeWithOffset:(NSDate*)date;
 
+// if there are source filters, only logs with source that matches one of the filters will be processed
+@property (readwrite) NSMutableArray* sourceFilters;
+
+// if there are description filters, only logs with description that matches one of the filters will be processed
+@property (readwrite) NSMutableArray* descriptionFilters;
+
 // overload the log method to support various levels of detail to specified
 // for creation of the MPIEvent object
 - (MPIEventPersistence)log:(NSString*)source description:(NSString*)description;
